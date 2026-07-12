@@ -124,7 +124,16 @@
 </div>
 
 <script>
+    // 💡 PC版から完全にトレースした正しい接続設定とヘッダー
     const SUPABASE_URL = "https://gifwnwwxviasnsjqyyzr.supabase.co/rest/v1";
+    const SUPABASE_KEY = "sb_publishable_Vhhe7TrF5XsP6vF_xOm_Kw_P2R0B5wi";
+    const supabaseHeaders = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${SUPABASE_KEY}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=representation"
+    };
+
     let companies = JSON.parse(localStorage.getItem('oreno_companies')) || [];
     let activeIndex = parseInt(localStorage.getItem('oreno_active_index')) || 0;
     let currentSitesData = [];
@@ -141,13 +150,9 @@
         }
     });
 
-    function makeHeaders(key) {
-        return {
-            "apikey": key,
-            "Authorization": `Bearer ${key}`,
-            "Content-Type": "application/json",
-            "Prefer": "return=representation"
-        };
+    // 💡 認証用のヘッダー関数もPC版の共通ヘッダーを返すように完全固定
+    function makeHeaders() {
+        return supabaseHeaders;
     }
 
     function setupCalMonthSelect() {
@@ -181,14 +186,16 @@
         btn.disabled = true;
 
         try {
-            const res = await fetch(`${SUPABASE_URL}/licenses?license_key=eq.${encodeURIComponent(key)}&pin_code=eq.${encodeURIComponent(pin)}`, { headers: makeHeaders(key) });
+            // PC版と全く同じ通信でライセンス確認
+            const res = await fetch(`${SUPABASE_URL}/licenses?license_key=eq.${encodeURIComponent(key)}&pin_code=eq.${encodeURIComponent(pin)}`, { headers: supabaseHeaders });
             const licJson = await res.json();
             
             if (!licJson || !Array.isArray(licJson) || licJson.length === 0 || !licJson[0] || !licJson[0].is_active) {
                 throw new Error('キーまたはPINが間違っているか、無効なアカウントです。');
             }
 
-            const workerRes = await fetch(`${SUPABASE_URL}/workers?select=*`, { headers: makeHeaders(key) });
+            // 名簿取得
+            const workerRes = await fetch(`${SUPABASE_URL}/workers`, { headers: supabaseHeaders });
             const workers = await workerRes.json();
             
             sel.innerHTML = '<option value="" disabled selected>名前を選択してください</option>';
@@ -289,7 +296,7 @@
         const comp = companies[activeIndex];
         if (!comp) return;
         try {
-            const res = await fetch(`${SUPABASE_URL}/sites?select=*`, { headers: makeHeaders(comp.url) });
+            const res = await fetch(`${SUPABASE_URL}/sites`, { headers: supabaseHeaders });
             const sites = await res.json();
             currentSitesData = sites;
 
@@ -332,7 +339,7 @@
         try {
             const res = await fetch(`${SUPABASE_URL}/attendance`, {
                 method: 'POST',
-                headers: makeHeaders(comp.url),
+                headers: supabaseHeaders,
                 body: JSON.stringify(payload)
             });
             if (!res.ok) throw new Error();
@@ -342,14 +349,14 @@
             document.getElementById('headcount').value = '1';
             document.getElementById('others').value = '';
         } catch (err) {
-            alert('エラーが発生しました。接続を確認してください。');
+            alert('エラーが発生しました。');
         } finally {
             btn.disabled = false; 
             btn.innerText = '出面を送信'; 
         }
     }
 
-    async function submitExpense(e) {
+    async function submitExpense() {
         const comp = companies[activeIndex];
         if (!comp) return alert('設定タブで会社を登録してください');
 
@@ -379,7 +386,7 @@
         try {
             const res = await fetch(`${SUPABASE_URL}/attendance`, {
                 method: 'POST',
-                headers: makeHeaders(comp.url),
+                headers: supabaseHeaders,
                 body: JSON.stringify(payload)
             });
             if (!res.ok) throw new Error();
@@ -412,7 +419,7 @@
         try {
             for (let comp of companies) {
                 try {
-                    const attRes = await fetch(`${SUPABASE_URL}/attendance?worker_name=eq.${encodeURIComponent(comp.myName)}`, { headers: makeHeaders(comp.url) });
+                    const attRes = await fetch(`${SUPABASE_URL}/attendance?worker_name=eq.${encodeURIComponent(comp.myName)}`, { headers: supabaseHeaders });
                     const attRecords = await attRes.json();
                     
                     let wage = comp.wage || 0;
@@ -432,7 +439,6 @@
                     let closingExpenses = 0;
 
                     attRecords.forEach(r => {
-                        // データキーの互換性マッピング
                         r.date = r.work_date;
                         r.site = r.site_name;
                         let totalExp = (Number(r.gasoline)||0) + (Number(r.highway)||0) + (Number(r.parking)||0) + (Number(r.misc)||0);
