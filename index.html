@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>俺の出面 - 子モバイル</title>
+    
+    <link rel="apple-touch-icon" href="https://i.ibb.co/FL6NqnSf/Gemini-Generated-Image-qj9gexqj9gexqj9g-1.jpg">
+    <link rel="icon" type="image/jpeg" href="https://i.ibb.co/FL6NqnSf/Gemini-Generated-Image-qj9gexqj9gexqj9g-1.jpg">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+
+    <style>
+        body { font-family: sans-serif; background: #f4f6f9; color: #333; margin: 0; padding-bottom: 70px; }
+        .header { background: #1a73e8; color: white; padding: 15px; text-align: center; position: sticky; top: 0; z-index: 100; }
+        .header h1 { margin: 0; font-size: 20px; }
+        .header .current-company { font-size: 14px; font-weight: bold; margin-top: 5px; color: #ffeb3b; }
+        .container { padding: 15px; max-width: 450px; margin: 0 auto; }
+        .card { background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        label { display: block; font-weight: bold; margin-bottom: 8px; font-size: 14px; }
+        input, select, textarea { width: 100%; max-width: 100%; padding: 14px; font-size: 16px; border: 2px solid #ccc; border-radius: 8px; box-sizing: border-box; margin-bottom: 20px; background: #fafafa; -webkit-appearance: none; appearance: none; }
+        input[type="date"] { display: block; height: 54px; }
+        button { width: 100%; padding: 16px; background: #1a73e8; color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; }
+        .btn-red { background: #e53935; } .btn-gray { background: #757575; }
+        .tab-bar { position: fixed; bottom: 0; width: 100%; background: #fff; display: flex; border-top: 1px solid #ddd; }
+        .tab-btn { flex: 1; padding: 15px 0; text-align: center; font-size: 12px; font-weight: bold; color: #666; border: none; background: none; }
+        .tab-btn.active { color: #1a73e8; border-top: 3px solid #1a73e8; }
+        .view { display: none; } .view.active { display: block; }
+        .company-item { border: 1px solid #eee; padding: 15px; margin-bottom: 10px; border-radius: 8px; }
+        .cal-summary { background: #e3f2fd; padding: 15px; border-radius: 8px; font-size: 16px; font-weight: bold; text-align: left; margin-top: 15px; line-height: 1.6; border: 1px solid #90caf9;}
+        .user-badge { background: #eee; padding: 10px; border-radius: 6px; font-size: 16px; font-weight: bold; margin-bottom: 20px; color: #555; }
+        .wage-highlight { color: #d32f2f; font-size: 18px; font-weight: 900; }
+        .period-label { display: inline-block; background: #1a73e8; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-bottom: 5px; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>現場革命：俺の出面</h1>
+    <div class="current-company" id="headerCompanyName">🏢 送信先未設定</div>
+</div>
+
+<div class="container">
+    <!-- 報告タブ -->
+    <div id="view-report" class="view active card">
+        <div class="user-badge" id="reportUserBadge">👤 報告者: 未設定</div>
+        <form id="attendanceForm" onsubmit="submitAttendance(event)">
+            <label>作業日</label>
+            <input type="date" id="workDate" required>
+
+            <label>現場名</label>
+            <select id="siteSelect" onchange="syncClientCompany()" required><option value="" disabled selected>現場を選択してください</option></select>
+
+            <label>応援先社名 (自動反映)</label>
+            <input type="text" id="clientCompany" readonly placeholder="自社現場の場合は空欄になります" style="background:#eee; color:#666;">
+
+            <label>人数</label>
+            <input type="number" id="headcount" value="1" min="1" required style="font-weight:bold; color:#1a73e8;">
+
+            <label>応援・その他</label>
+            <textarea id="others" rows="3" placeholder="備考や応援者名など"></textarea>
+
+            <button type="submit" id="submitBtn" style="margin-bottom: 30px;">出面を送信</button>
+        </form>
+        
+        <div style="border-top: 2px dashed #ccc; padding-top: 20px;">
+            <h3 style="margin-top: 0; color: #d32f2f;">💰 経費の追加送信</h3>
+            <p style="font-size:12px; color:#666; margin-top:-5px;">※「出面」を送信した後に、後から送信してください。</p>
+            
+            <div style="display:flex; gap:10px; margin-bottom:10px;">
+                <div style="flex:1;"><label>ガソリン</label><input type="number" id="expGas" placeholder="例: 1000" style="margin-bottom:0;"></div>
+                <div style="flex:1;"><label>高速</label><input type="number" id="expHigh" placeholder="例: 800" style="margin-bottom:0;"></div>
+            </div>
+            <div style="display:flex; gap:10px; margin-bottom:20px;">
+                <div style="flex:1;"><label>駐車場</label><input type="number" id="expPark" placeholder="例: 500" style="margin-bottom:0;"></div>
+                <div style="flex:1;"><label>雑費</label><input type="number" id="expMisc" placeholder="例: 300" style="margin-bottom:0;"></div>
+            </div>
+            <button type="button" id="expenseBtn" class="btn-red" onclick="submitExpense()">経費だけを送信</button>
+        </div>
+    </div>
+
+    <!-- 集計タブ -->
+    <div id="view-calendar" class="view card">
+        <h2>📅 出面・給与自動集計</h2>
+        <label>集計する月を選択</label>
+        <select id="calMonthSelect" style="font-weight: bold; color: #1a365d; background: #fff; border-color: #1a73e8;"></select>
+        <button onclick="fetchCalendar(this)">指定した月で集計開始</button>
+        <div id="calResult" style="display:none;">
+            <div id="calDetails" style="margin-top:20px;"></div>
+        </div>
+    </div>
+
+    <!-- 設定タブ -->
+    <div id="view-settings" class="view card">
+        <h2>🏢 会社・個人設定</h2>
+        <div style="background: #fafafa; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px dashed #ccc;">
+            <label>会社名</label><input type="text" id="newCompName" placeholder="例: （株）現場革命">
+            <label>ライセンスキー</label><input type="text" id="newLicenseKey" placeholder="メールに届いたキーを入力">
+            <label>PINコード (8桁)</label><input type="password" id="newCompPin" placeholder="8桁の数字" maxlength="8">
+            <button type="button" class="btn-red" style="padding:10px; font-size:14px; margin-bottom:20px;" onclick="fetchMastersForSetup(this)">① 情報を読み込む</button>
+            
+            <label>自分の名前</label><select id="newCompMyName" required><option value="" disabled selected>先に情報を読み込んでください</option></select>
+            
+            <hr style="border: 0; border-top: 1px dashed #ccc; margin: 20px 0;">
+            <p style="font-size:13px; color:#666; font-weight:bold; margin-top:0;">▼ 給与計算用設定</p>
+            <div style="display: flex; gap: 8px;">
+                <div style="flex: 1.5;"><label>日当単価 (円)</label><input type="number" id="newCompWage" placeholder="例: 15000"></div>
+                <div style="flex: 1;"><label>消費税</label><select id="newCompTax"><option value="税込">税込</option><option value="税別">税別(+10%)</option></select></div>
+            </div>
+            <label>締め日</label>
+            <select id="newCompClosing"><option value="31">月末締め</option><option value="5">5日締め</option><option value="10">10日締め</option><option value="15">15日締め</option><option value="20">20日締め</option><option value="25">25日締め</option></select>
+            <label>支払日</label><input type="text" id="newCompPay" placeholder="例: 翌月末、翌25日など">
+
+            <button class="btn-gray" onclick="addCompany()">② この内容で会社を追加</button>
+        </div>
+        <h3>登録済みの会社一覧</h3>
+        <div id="companyList"></div>
+    </div>
+</div>
+
+<div class="tab-bar">
+    <button class="tab-btn active" onclick="switchView('report', this)">📝 報告</button>
+    <button class="tab-btn" onclick="switchView('calendar', this)">📅 集計・給料</button>
+    <button class="tab-btn" onclick="switchView('settings', this)">⚙️ 設定変更</button>
+</div>
+
+<script>
+    const SUPABASE_BASE_URL = 'https://gifwnwwxviasnsjqyyzr.supabase.co/rest/v1';
+    let companies = JSON.parse(localStorage.getItem('oreno_companies')) || [];
+    let activeIndex = parseInt(localStorage.getItem('oreno_active_index')) || 0;
+    let currentSitesData = [];
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const today = new Date();
+        document.getElementById('workDate').value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        setupCalMonthSelect();
+        renderCompanies();
+        if (companies.length === 0) {
+            switchView('settings', document.querySelectorAll('.tab-btn')[2]);
+        } else {
+            loadMasters();
+        }
+    });
+
+    function makeHeaders(key, pin) {
+        return {
+            'apikey': key,
+            'Authorization': `Bearer ${key}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation'
+        };
+    }
+
+    function setupCalMonthSelect() {
+        const select = document.getElementById('calMonthSelect');
+        if (!select) return;
+        select.innerHTML = '';
+        const today = new Date();
+        for (let i = -1; i < 12; i++) {
+            const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            select.innerHTML += `<option value="${yyyy}-${mm}">${yyyy}年${mm}月</option>`;
+        }
+        select.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    function switchView(viewName, btn) {
+        document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+        document.getElementById('view-' + viewName).classList.add('active');
+        btn.classList.add('active');
+    }
+
+    async function fetchMastersForSetup(btn) {
+        const key = document.getElementById('newLicenseKey').value.trim();
+        const pin = document.getElementById('newCompPin').value.trim();
+        if (!key || !pin) return alert('ライセンスキーとPINコードを入力してください');
+
+        const sel = document.getElementById('newCompMyName');
+        sel.innerHTML = '<option value="" disabled selected>読込中...</option>';
+        btn.disabled = true;
+
+        try {
+            // ① ライセンス認証確認
+            const licRes = await fetch(`${SUPABASE_BASE_URL}/licenses?license_key=eq.${encodeURIComponent(key)}&pin_code=eq.${encodeURIComponent(pin)}`, { headers: makeHeaders(key, pin) });
+            const licJson = await licRes.json();
+            if (!licJson || licJson.length === 0 || !licJson[0].is_active) {
+                throw new Error('キーまたはPINが間違っているか、無効なアカウントです。');
+            }
+
+            // ② 子方の名簿取得
+            const workerRes = await fetch(`${SUPABASE_BASE_URL}/workers?select=*`, { headers: makeHeaders(key, pin) });
+            const workers = await workerRes.json();
+            
+            sel.innerHTML = '<option value="" disabled selected>名前を選択してください</option>';
+            workers.forEach(w => {
+                sel.innerHTML += `<option value="${w.name}">${w.name}</option>`;
+            });
+            alert('名簿の読み込みに成功しました！名前を選んで追加に進んでください。');
+        } catch (err) {
+            alert('読み込み失敗: ' + err.message);
+            sel.innerHTML = '<option value="" disabled selected>読込失敗</option>';
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    function addCompany() {
+        const name = document.getElementById('newCompName').value.trim();
+        const key = document.getElementById('newLicenseKey').value.trim();
+        const myName = document.getElementById('newCompMyName').value.trim();
+        const pin = document.getElementById('newCompPin').value.trim();
+        const wage = Number(document.getElementById('newCompWage').value) || 0;
+        const taxType = document.getElementById('newCompTax').value; 
+        const closingDate = Number(document.getElementById('newCompClosing').value);
+        const payDate = document.getElementById('newCompPay').value.trim() || '未設定';
+        
+        if (!name || !key || !myName || !pin) return alert('会社名、キー、自分の名前、PINコードは必須です');
+        
+        companies.push({ name, url: key, myName, pin, wage, taxType, closingDate, payDate });
+        saveData();
+        
+        document.getElementById('newCompName').value = '';
+        document.getElementById('newLicenseKey').value = '';
+        document.getElementById('newCompMyName').innerHTML = '<option value="" disabled selected>先に情報を読み込んでください</option>';
+        document.getElementById('newCompPin').value = '';
+        document.getElementById('newCompWage').value = '';
+        document.getElementById('newCompPay').value = '';
+        
+        renderCompanies();
+        if(companies.length === 1) setActiveCompany(0);
+    }
+
+    function renderCompanies() {
+        const list = document.getElementById('companyList');
+        list.innerHTML = '';
+        companies.forEach((comp, idx) => {
+            const isActive = idx == activeIndex;
+            const wageText = comp.wage ? `¥${comp.wage.toLocaleString()} (${comp.taxType})` : '未設定';
+            const closeText = comp.closingDate == 31 ? '月末' : comp.closingDate + '日';
+            
+            list.innerHTML += `
+                <div class="company-item" style="${isActive ? 'border-color: #1a73e8; background: #e3f2fd;' : ''}">
+                    <div style="font-weight:bold; font-size:18px;">${comp.name}</div>
+                    <div style="font-size:14px; color:#555; margin-top:5px;">👤 登録名: ${comp.myName}</div>
+                    <div style="font-size:12px; color:#666; margin-top:5px; background:#fff; padding:6px; border-radius:4px; border:1px solid #ccc;">
+                        💰 単価: <b>${wageText}</b> / 🗓 締め: <b>${closeText}</b> / 💸 支払: <b>${comp.payDate}</b>
+                    </div>
+                    <div style="margin-top:10px;">
+                        ${isActive ? '✅ 現在の送信先' : `<button class="btn-gray" style="padding:8px; font-size:14px; width:48%;" onclick="setActiveCompany(${idx})">これに切替</button>`}
+                        <button class="btn-red" style="padding:8px; font-size:14px; width:48%; float:right;" onclick="deleteCompany(${idx})">削除</button>
+                    </div>
+                    <div style="clear:both;"></div>
+                </div>
+            `;
+        });
+        
+        const current = companies[activeIndex];
+        if (current) {
+            document.getElementById('headerCompanyName').innerText = `🏢 送信先：${current.name}`;
+            document.getElementById('reportUserBadge').innerText = `👤 報告者: ${current.myName}`;
+        } else {
+            document.getElementById('headerCompanyName').innerText = '🏢 送信先未設定 (設定タブへ)';
+            document.getElementById('reportUserBadge').innerText = '👤 報告者: 未設定';
+        }
+    }
+
+    function setActiveCompany(idx) {
+        activeIndex = idx;
+        saveData();
+        renderCompanies();
+        loadMasters();
+        alert('送信先を切り替えました！');
+    }
+
+    function deleteCompany(idx) {
+        if(!confirm('本当に削除しますか？')) return;
+        companies.splice(idx, 1);
+        if (activeIndex >= companies.length) activeIndex = 0;
+        saveData();
+        renderCompanies();
+    }
+
+    function saveData() {
+        localStorage.setItem('oreno_companies', JSON.stringify(companies));
+        localStorage.setItem('oreno_active_index', activeIndex);
+    }
+
+    async function loadMasters() {
+        const comp = companies[activeIndex];
+        if (!comp) return;
+        try {
+            const res = await fetch(`${SUPABASE_BASE_URL}/sites?select=*`, { headers: makeHeaders(comp.url, comp.pin) });
+            const sites = await res.json();
+            currentSitesData = sites;
+
+            const sel = document.getElementById('siteSelect');
+            sel.innerHTML = '<option value="" disabled selected>現場を選択してください</option>';
+            sites.forEach(s => {
+                sel.innerHTML += `<option value="${s.name}">${s.name}</option>`;
+            });
+        } catch (err) {
+            console.log('現場マスター読込失敗', err);
+        }
+    }
+
+    function syncClientCompany() {
+        const siteName = document.getElementById('siteSelect').value;
+        const companyInput = document.getElementById('clientCompany');
+        const siteInfo = currentSitesData.find(s => s.name === siteName);
+        companyInput.value = (siteInfo && siteInfo.company) ? siteInfo.company : '';
+    }
+
+    async function submitAttendance(e) {
+        e.preventDefault();
+        const comp = companies[activeIndex];
+        if (!comp) return alert('設定タブで会社を登録してください');
+        if (companies.length >= 2 && !confirm(`送信先は【 ${comp.name} 】\n報告者は【 ${comp.myName} 】で間違いありませんか？`)) return;
+
+        const btn = document.getElementById('submitBtn');
+        btn.disabled = true; 
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 送信中...';
+
+        const payload = {
+            date: document.getElementById('workDate').value,
+            site: document.getElementById('siteSelect').value,
+            client_company: document.getElementById('clientCompany').value, 
+            headcount: Number(document.getElementById('headcount').value) || 1,
+            worker_name: comp.myName,
+            remarks: document.getElementById('others').value
+        };
+
+        try {
+            const res = await fetch(`${SUPABASE_BASE_URL}/attendance`, {
+                method: 'POST',
+                headers: makeHeaders(comp.url, comp.pin),
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) throw new Error('送信に失敗しました');
+            alert('出面を正常に送信しました！');
+            document.getElementById('siteSelect').value = '';
+            document.getElementById('clientCompany').value = ''; 
+            document.getElementById('headcount').value = '1';
+            document.getElementById('others').value = '';
+        } catch (err) {
+            alert('エラーが発生しました: ' + err.message);
+        } finally {
+            btn.disabled = false; 
+            btn.innerText = '出面を送信'; 
+        }
+    }
+
+    async function submitExpense() {
+        const comp = companies[activeIndex];
+        if (!comp) return alert('設定タブで会社を登録してください');
+
+        const gas = Number(document.getElementById('expGas').value) || 0;
+        const high = Number(document.getElementById('expHigh').value) || 0;
+        const park = Number(document.getElementById('expPark').value) || 0;
+        const misc = Number(document.getElementById('expMisc').value) || 0;
+
+        if (gas === 0 && high === 0 && park === 0 && misc === 0) return alert('経費の金額を入力してください');
+
+        const btn = document.getElementById('expenseBtn');
+        const originalText = btn.innerHTML;
+        btn.disabled = true; 
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 送信中...';
+
+        const payload = {
+            date: document.getElementById('workDate').value,
+            worker_name: comp.myName,
+            gasoline: gas,
+            highway: high,
+            parking: park,
+            misc: misc
+        };
+
+        try {
+            const res = await fetch(`${SUPABASE_BASE_URL}/expenses`, {
+                method: 'POST',
+                headers: makeHeaders(comp.url, comp.pin),
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) throw new Error('経費送信に失敗しました');
+            alert('経費を正常に送信しました！');
+            document.getElementById('expGas').value = '';
+            document.getElementById('expHigh').value = '';
+            document.getElementById('expPark').value = '';
+            document.getElementById('expMisc').value = '';
+        } catch (err) {
+            alert('通信エラーが発生しました');
+        } finally {
+            btn.disabled = false; 
+            btn.innerHTML = originalText;
+        }
+    }
+
+    async function fetchCalendar(btn) { 
+        if (companies.length === 0) return alert('会社が登録されていません');
+        const selectedMonthPrefix = document.getElementById('calMonthSelect').value;
+        let [targetYear, targetMonth] = selectedMonthPrefix.split('-').map(Number);
+        let detailsHtml = '';
+
+        document.getElementById('calResult').style.display = 'block';
+        document.getElementById('calDetails').innerHTML = `<div style="text-align:center;"><i class="fas fa-spinner fa-spin"></i> データを収集中...</div>`;
+
+        let originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 集計中...';
+
+        try {
+            for (let comp of companies) {
+                try {
+                    // ① 自分の出面履歴を取得
+                    const attRes = await fetch(`${SUPABASE_BASE_URL}/attendance?worker_name=eq.${encodeURIComponent(comp.myName)}`, { headers: makeHeaders(comp.url, comp.pin) });
+                    const attRecords = await attRes.json();
+
+                    // ② 自分の経費履歴を取得
+                    const expRes = await fetch(`${SUPABASE_BASE_URL}/expenses?worker_name=eq.${encodeURIComponent(comp.myName)}`, { headers: makeHeaders(comp.url, comp.pin) });
+                    const expRecords = await expRes.json();
+                    
+                    let wage = comp.wage || 0;
+                    let closing = comp.closingDate || 31;
+                    let taxType = comp.taxType || '税込';
+                    
+                    let startPeriod, endPeriod, displayPeriodText;
+                    if (closing !== 31) {
+                        startPeriod = new Date(targetYear, targetMonth - 2, closing + 1);
+                        endPeriod = new Date(targetYear, targetMonth - 1, closing);
+                        displayPeriodText = `${startPeriod.getMonth()+1}/${startPeriod.getDate()} 〜 ${endPeriod.getMonth()+1}/${endPeriod.getDate()}`;
+                    }
+
+                    let standardRecords = [];
+                    let closingRecords = [];
+                    let standardExpenses = 0;
+                    let closingExpenses = 0;
+
+                    // 出面データの仕分け
+                    attRecords.forEach(r => {
+                        let matchedExp = expRecords.filter(e => e.date === r.date);
+                        let totalExp = matchedExp.reduce((sum, e) => sum + (Number(e.gasoline)||0) + (Number(e.highway)||0) + (Number(e.parking)||0) + (Number(e.misc)||0), 0);
+                        r.totalExpense = totalExp;
+
+                        if (r.date.startsWith(selectedMonthPrefix)) {
+                            standardRecords.push(r);
+                        }
+                        if (closing === 31) {
+                            if (r.date.startsWith(selectedMonthPrefix)) closingRecords.push(r);
+                        } else {
+                            let [ry, rm, rd] = r.date.split('-').map(Number);
+                            let recDate = new Date(ry, rm - 1, rd);
+                            if (recDate >= startPeriod && recDate <= endPeriod) closingRecords.push(r);
+                        }
+                    });
+
+                    // 出面日に入っていない単発経費も月単位で合算
+                    expRecords.forEach(e => {
+                        let totalExp = (Number(e.gasoline)||0) + (Number(e.highway)||0) + (Number(e.parking)||0) + (Number(e.misc)||0);
+                        if (e.date.startsWith(selectedMonthPrefix)) standardExpenses += totalExp;
+
+                        if (closing === 31) {
+                            if (e.date.startsWith(selectedMonthPrefix)) closingExpenses += totalExp;
+                        } else {
+                            let [ey, em, ed] = e.date.split('-').map(Number);
+                            let recDate = new Date(ey, em - 1, ed);
+                            if (recDate >= startPeriod && recDate <= endPeriod) closingExpenses += totalExp;
+                        }
+                    });
+
+                    let standardDays = standardRecords.reduce((sum, r) => sum + (r.headcount || 1), 0);
+                    let closingDays = closingRecords.reduce((sum, r) => sum + (r.headcount || 1), 0);
+                    
+                    const calcTotal = (days, expenses) => {
+                        let base = days * wage;
+                        let tax = taxType === '税別' ? Math.floor(base * 0.1) : 0;
+                        return { base, tax, total: base + tax + expenses };
+                    };
+                    let stdCalc = calcTotal(standardDays, standardExpenses);
+                    let clsCalc = calcTotal(closingDays, closingExpenses);
+                    
+                    detailsHtml += `
+                        <div style="background:#fff; border:1px solid #ccc; border-radius:8px; padding:15px; margin-bottom:20px;">
+                            <h3 style="margin-top:0; color:#1a365d;">🏢 ${comp.name}</h3>
+                            <div class="cal-summary" style="background:#f5f5f5; border-color:#ddd;">
+                                <span class="period-label" style="background:#757575;">月単位 (1日〜月末)</span><br>
+                                合計人工: <b>${standardDays}</b> 人<br>
+                                予想給与: <span class="wage-highlight" style="color:#555;">¥${stdCalc.total.toLocaleString()}</span>
+                                <div style="font-size:11px; color:#718096; margin-top:2px;">
+                                    (@${wage.toLocaleString()} ${taxType === '税別' ? `/ 消費税: ¥${stdCalc.tax.toLocaleString()}` : ''} ${standardExpenses > 0 ? `<br><span style="color:#059669;">💰 経費合計: ¥${standardExpenses.toLocaleString()}</span>` : ''})
+                                </div>
+                            </div>
+                            <div class="cal-summary">
+                                <span class="period-label">実際の給与対象 (${closing==31 ? '月末' : closing+'日'}締め)</span><br>
+                                ${closing !== 31 ? `<span style="font-size:12px; color:#555;">期間: ${displayPeriodText}</span><br>` : ''}
+                                合計人工: <b>${closingDays}</b> 人<br>
+                                予想給与: <span class="wage-highlight">¥${clsCalc.total.toLocaleString()}</span><br>
+                                <div style="font-size:11px; color:#718096; margin-top:2px;">
+                                    (@${wage.toLocaleString()} ${taxType === '税別' ? `/ 消費税: ¥${clsCalc.tax.toLocaleString()}` : ''} ${closingExpenses > 0 ? `<br><span style="color:#059669;">💰 経費合計: ¥${closingExpenses.toLocaleString()}</span>` : ''})
+                                </div>
+                                <div style="font-size:12px; color:#1a73e8; margin-top:8px;">💳 支払日: ${comp.payDate}</div>
+                            </div>
+                            <details style="margin-top:15px; font-size:13px; color:#555;">
+                                <summary style="cursor:pointer; font-weight:bold;">この月の出勤履歴を見る</summary>
+                                <div style="padding-top:10px; line-height:1.6;">
+                                    ${standardRecords.length > 0 ? standardRecords.map(r => `・${r.date.substring(5)}：${r.site} ${r.headcount > 1 ? '<span style="color:#e53935; font-weight:bold;">('+r.headcount+'人)</span>' : ''} ${r.totalExpense > 0 ? `<span style="color:#059669; font-size:11px;">(経費:¥${r.totalExpense.toLocaleString()})</span>` : ''}`).join('<br>') : '出勤履歴なし'}
+                                </div>
+                            </details>
+                        </div>
+                    `;
+                } catch(e) { console.log(comp.name + 'の取得失敗'); }
+            }
+            document.getElementById('calDetails').innerHTML = detailsHtml || `<p style="text-align:center;">⚠️ データがありません</p>`;
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+</script>
+</body>
+</html>
