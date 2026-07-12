@@ -64,7 +64,7 @@
         
         <div style="border-top: 2px dashed #ccc; padding-top: 20px;">
             <h3 style="margin-top: 0; color: #d32f2f;">💰 経費の追加送信</h3>
-            <p style="font-size:12px; color:#666; margin-top:-5px;">※「出面」を送信した後に、後から送信してください。</p>
+            <p style="font-size:12px; color:#666; margin-top:-5px;">※必ず「出面」を送信した後に、後から送信してください。</p>
             
             <div style="display:flex; gap:10px; margin-bottom:10px;">
                 <div style="flex:1;"><label>ガソリン</label><input type="number" id="expGas" placeholder="例: 1000" style="margin-bottom:0;"></div>
@@ -108,7 +108,7 @@
             </div>
             <label>締め日</label>
             <select id="newCompClosing"><option value="31">月末締め</option><option value="5">5日締め</option><option value="10">10日締め</option><option value="15">15日締め</option><option value="20">20日締め</option><option value="25">25日締め</option></select>
-            <label>支払日</label><input type="text" id="newCompPay" placeholder="例: 翌月末、翌25日など">
+            <label>支払日</label><input type="text" id="newCompPay" placeholder="例: 翌月末、翌 25 日など">
 
             <button class="btn-gray" onclick="addCompany()">② この内容で会社を追加</button>
         </div>
@@ -124,7 +124,7 @@
 </div>
 
 <script>
-    const SUPABASE_BASE_URL = 'https://gifwnwwxviasnsjqyyzr.supabase.co';
+    const SUPABASE_URL = "https://gifwnwwxviasnsjqyyzr.supabase.co/rest/v1";
     let companies = JSON.parse(localStorage.getItem('oreno_companies')) || [];
     let activeIndex = parseInt(localStorage.getItem('oreno_active_index')) || 0;
     let currentSitesData = [];
@@ -141,11 +141,12 @@
         }
     });
 
-    // 💡 修正：余計なBearerやPreferを完全に消し去り、PC版と同じくapikeyだけを通す綺麗な形に直しました
-    function makeHeaders(key, pin) {
+    function makeHeaders(key) {
         return {
-            'apikey': key,
-            'Content-Type': 'application/json'
+            "apikey": key,
+            "Authorization": `Bearer ${key}`,
+            "Content-Type": "application/json",
+            "Prefer": "return=representation"
         };
     }
 
@@ -180,15 +181,14 @@
         btn.disabled = true;
 
         try {
-            // ① ライセンス認証確認
-            const licRes = await fetch(`${SUPABASE_BASE_URL}/licenses?license_key=eq.${encodeURIComponent(key)}&pin_code=eq.${encodeURIComponent(pin)}`, { headers: makeHeaders(key, pin) });
-            const licJson = await licRes.json();
-            if (!licJson || licJson.length === 0 || !licJson[0].is_active) {
+            const res = await fetch(`${SUPABASE_URL}/licenses?license_key=eq.${encodeURIComponent(key)}&pin_code=eq.${encodeURIComponent(pin)}`, { headers: makeHeaders(key) });
+            const licJson = await res.json();
+            
+            if (!licJson || !Array.isArray(licJson) || licJson.length === 0 || !licJson[0] || !licJson[0].is_active) {
                 throw new Error('キーまたはPINが間違っているか、無効なアカウントです。');
             }
 
-            // ② 子方の名簿取得
-            const workerRes = await fetch(`${SUPABASE_BASE_URL}/workers?select=*`, { headers: makeHeaders(key, pin) });
+            const workerRes = await fetch(`${SUPABASE_URL}/workers?select=*`, { headers: makeHeaders(key) });
             const workers = await workerRes.json();
             
             sel.innerHTML = '<option value="" disabled selected>名前を選択してください</option>';
@@ -289,7 +289,7 @@
         const comp = companies[activeIndex];
         if (!comp) return;
         try {
-            const res = await fetch(`${SUPABASE_BASE_URL}/sites?select=*`, { headers: makeHeaders(comp.url, comp.pin) });
+            const res = await fetch(`${SUPABASE_URL}/sites?select=*`, { headers: makeHeaders(comp.url) });
             const sites = await res.json();
             currentSitesData = sites;
 
@@ -321,35 +321,35 @@
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 送信中...';
 
         const payload = {
-            date: document.getElementById('workDate').value,
-            site: document.getElementById('siteSelect').value,
+            work_date: document.getElementById('workDate').value,
+            site_name: document.getElementById('siteSelect').value,
             client_company: document.getElementById('clientCompany').value, 
             headcount: Number(document.getElementById('headcount').value) || 1,
             worker_name: comp.myName,
-            remarks: document.getElementById('others').value
+            others: document.getElementById('others').value
         };
 
         try {
-            const res = await fetch(`${SUPABASE_BASE_URL}/attendance`, {
+            const res = await fetch(`${SUPABASE_URL}/attendance`, {
                 method: 'POST',
-                headers: makeHeaders(comp.url, comp.pin),
+                headers: makeHeaders(comp.url),
                 body: JSON.stringify(payload)
             });
-            if (!res.ok) throw new Error('送信に失敗しました');
+            if (!res.ok) throw new Error();
             alert('出面を正常に送信しました！');
             document.getElementById('siteSelect').value = '';
             document.getElementById('clientCompany').value = ''; 
             document.getElementById('headcount').value = '1';
             document.getElementById('others').value = '';
         } catch (err) {
-            alert('エラーが発生しました: ' + err.message);
+            alert('エラーが発生しました。接続を確認してください。');
         } finally {
             btn.disabled = false; 
             btn.innerText = '出面を送信'; 
         }
     }
 
-    async function submitExpense() {
+    async function submitExpense(e) {
         const comp = companies[activeIndex];
         if (!comp) return alert('設定タブで会社を登録してください');
 
@@ -366,21 +366,23 @@
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 送信中...';
 
         const payload = {
-            date: document.getElementById('workDate').value,
+            work_date: document.getElementById('workDate').value,
+            site_name: "経費精算",
             worker_name: comp.myName,
             gasoline: gas,
             highway: high,
             parking: park,
-            misc: misc
+            misc: misc,
+            headcount: 0
         };
 
         try {
-            const res = await fetch(`${SUPABASE_BASE_URL}/expenses`, {
+            const res = await fetch(`${SUPABASE_URL}/attendance`, {
                 method: 'POST',
-                headers: makeHeaders(comp.url, comp.pin),
+                headers: makeHeaders(comp.url),
                 body: JSON.stringify(payload)
             });
-            if (!res.ok) throw new Error('経費送信に失敗しました');
+            if (!res.ok) throw new Error();
             alert('経費を正常に送信しました！');
             document.getElementById('expGas').value = '';
             document.getElementById('expHigh').value = '';
@@ -410,13 +412,8 @@
         try {
             for (let comp of companies) {
                 try {
-                    // ① 自分の出面履歴を取得
-                    const attRes = await fetch(`${SUPABASE_BASE_URL}/attendance?worker_name=eq.${encodeURIComponent(comp.myName)}`, { headers: makeHeaders(comp.url, comp.pin) });
+                    const attRes = await fetch(`${SUPABASE_URL}/attendance?worker_name=eq.${encodeURIComponent(comp.myName)}`, { headers: makeHeaders(comp.url) });
                     const attRecords = await attRes.json();
-
-                    // ② 自分の経費履歴を取得
-                    const expRes = await fetch(`${SUPABASE_BASE_URL}/expenses?worker_name=eq.${encodeURIComponent(comp.myName)}`, { headers: makeHeaders(comp.url, comp.pin) });
-                    const expRecords = await expRes.json();
                     
                     let wage = comp.wage || 0;
                     let closing = comp.closingDate || 31;
@@ -434,40 +431,34 @@
                     let standardExpenses = 0;
                     let closingExpenses = 0;
 
-                    // 出面データの仕分け
                     attRecords.forEach(r => {
-                        let matchedExp = expRecords.filter(e => e.date === r.date);
-                        let totalExp = matchedExp.reduce((sum, e) => sum + (Number(e.gasoline)||0) + (Number(e.highway)||0) + (Number(e.parking)||0) + (Number(e.misc)||0), 0);
+                        // データキーの互換性マッピング
+                        r.date = r.work_date;
+                        r.site = r.site_name;
+                        let totalExp = (Number(r.gasoline)||0) + (Number(r.highway)||0) + (Number(r.parking)||0) + (Number(r.misc)||0);
                         r.totalExpense = totalExp;
 
                         if (r.date.startsWith(selectedMonthPrefix)) {
                             standardRecords.push(r);
+                            standardExpenses += totalExp;
                         }
                         if (closing === 31) {
-                            if (r.date.startsWith(selectedMonthPrefix)) closingRecords.push(r);
+                            if (r.date.startsWith(selectedMonthPrefix)) {
+                                closingRecords.push(r);
+                                closingExpenses += totalExp;
+                            }
                         } else {
                             let [ry, rm, rd] = r.date.split('-').map(Number);
                             let recDate = new Date(ry, rm - 1, rd);
-                            if (recDate >= startPeriod && recDate <= endPeriod) closingRecords.push(r);
+                            if (recDate >= startPeriod && recDate <= endPeriod) {
+                                closingRecords.push(r);
+                                closingExpenses += totalExp;
+                            }
                         }
                     });
 
-                    // 出面日に入っていない単発経費も月単位で合算
-                    expRecords.forEach(e => {
-                        let totalExp = (Number(e.gasoline)||0) + (Number(e.highway)||0) + (Number(e.parking)||0) + (Number(e.misc)||0);
-                        if (e.date.startsWith(selectedMonthPrefix)) standardExpenses += totalExp;
-
-                        if (closing === 31) {
-                            if (e.date.startsWith(selectedMonthPrefix)) closingExpenses += totalExp;
-                        } else {
-                            let [ey, em, ed] = e.date.split('-').map(Number);
-                            let recDate = new Date(ey, em - 1, ed);
-                            if (recDate >= startPeriod && recDate <= endPeriod) closingExpenses += totalExp;
-                        }
-                    });
-
-                    let standardDays = standardRecords.reduce((sum, r) => sum + (r.headcount || 1), 0);
-                    let closingDays = closingRecords.reduce((sum, r) => sum + (r.headcount || 1), 0);
+                    let standardDays = standardRecords.reduce((sum, r) => sum + (r.headcount || 0), 0);
+                    let closingDays = closingRecords.reduce((sum, r) => sum + (r.headcount || 0), 0);
                     
                     const calcTotal = (days, expenses) => {
                         let base = days * wage;
@@ -498,12 +489,6 @@
                                 </div>
                                 <div style="font-size:12px; color:#1a73e8; margin-top:8px;">💳 支払日: ${comp.payDate}</div>
                             </div>
-                            <details style="margin-top:15px; font-size:13px; color:#555;">
-                                <summary style="cursor:pointer; font-weight:bold;">この月の出勤履歴を見る</summary>
-                                <div style="padding-top:10px; line-height:1.6;">
-                                    ${standardRecords.length > 0 ? standardRecords.map(r => `・${r.date.substring(5)}：${r.site} ${r.headcount > 1 ? '<span style="color:#e53935; font-weight:bold;">('+r.headcount+'人)</span>' : ''} ${r.totalExpense > 0 ? `<span style="color:#059669; font-size:11px;">(経費:¥${r.totalExpense.toLocaleString()})</span>` : ''}`).join('<br>') : '出勤履歴なし'}
-                                </div>
-                            </details>
                         </div>
                     `;
                 } catch(e) { console.log(comp.name + 'の取得失敗'); }
