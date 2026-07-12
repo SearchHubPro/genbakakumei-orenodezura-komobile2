@@ -141,12 +141,11 @@
         }
     });
 
+    // 💡 修正：余計なBearerやPreferを完全に消し去り、PC版と同じくapikeyだけを通す綺麗な形に直しました
     function makeHeaders(key, pin) {
         return {
             'apikey': key,
-            'Authorization': `Bearer ${key}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=representation'
+            'Content-Type': 'application/json'
         };
     }
 
