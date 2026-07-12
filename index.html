@@ -40,7 +40,6 @@
 </div>
 
 <div class="container">
-    <!-- 報告タブ -->
     <div id="view-report" class="view active card">
         <div class="user-badge" id="reportUserBadge">👤 報告者: 未設定</div>
         <form id="attendanceForm" onsubmit="submitAttendance(event)">
@@ -75,9 +74,8 @@
 
             <button type="submit" id="submitBtn" style="margin-bottom: 30px;">出面と経費を送信</button>
         </form>
-        </div>
+    </div>
 
-    <!-- 集計タブ -->
     <div id="view-calendar" class="view card">
         <h2>📅 出面・給与自動集計</h2>
         <label>集計する月を選択</label>
@@ -88,7 +86,6 @@
         </div>
     </div>
 
-    <!-- 設定タブ -->
     <div id="view-settings" class="view card">
         <h2>🏢 会社・個人設定</h2>
         <div style="background: #fafafa; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px dashed #ccc;">
@@ -123,7 +120,6 @@
 </div>
 
 <script>
-    // 💡 PC版から完全にトレースした正しい接続設定とヘッダー
     const SUPABASE_URL = "https://gifwnwwxviasnsjqyyzr.supabase.co/rest/v1";
     const SUPABASE_KEY = "sb_publishable_Vhhe7TrF5XsP6vF_xOm_Kw_P2R0B5wi";
     const supabaseHeaders = {
@@ -149,7 +145,6 @@
         }
     });
 
-    // 💡 認証用のヘッダー関数もPC版の共通ヘッダーを返すように完全固定
     function makeHeaders() {
         return supabaseHeaders;
     }
@@ -185,7 +180,7 @@
         btn.disabled = true;
 
         try {
-            // PC版と全く同じ通信でライセンス確認
+            // 💡 認証：入力されたライセンスキーで有効性を確認
             const res = await fetch(`${SUPABASE_URL}/licenses?license_key=eq.${encodeURIComponent(key)}&pin_code=eq.${encodeURIComponent(pin)}`, { headers: supabaseHeaders });
             const licJson = await res.json();
             
@@ -193,8 +188,8 @@
                 throw new Error('キーまたはPINが間違っているか、無効なアカウントです。');
             }
 
-            // 名簿取得
-            const workerRes = await fetch(`${SUPABASE_URL}/workers`, { headers: supabaseHeaders });
+            // 💡 認証：名簿（workers）を取得する際にも入力されたライセンスキーで絞り込み
+            const workerRes = await fetch(`${SUPABASE_URL}/workers?license_key=eq.${encodeURIComponent(key)}`, { headers: supabaseHeaders });
             const workers = await workerRes.json();
             
             sel.innerHTML = '<option value="" disabled selected>名前を選択してください</option>';
@@ -295,7 +290,8 @@
         const comp = companies[activeIndex];
         if (!comp) return;
         try {
-            const res = await fetch(`${SUPABASE_URL}/sites`, { headers: supabaseHeaders });
+            // 💡 認証：保存されている親方のライセンスキーを使って現場（sites）を取得
+            const res = await fetch(`${SUPABASE_URL}/sites?license_key=eq.${encodeURIComponent(comp.url)}`, { headers: supabaseHeaders });
             const sites = await res.json();
             currentSitesData = sites;
 
@@ -326,15 +322,15 @@
         btn.disabled = true; 
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 送信中...';
 
-        // 💡 出面データに加えて経費の入力値もまとめてpayloadに合流させる
+        // 💡 認証：データ（payload）の中に、この会社の license_key をしっかりと埋め込む
         const payload = {
+            license_key: comp.url,
             work_date: document.getElementById('workDate').value,
             site_name: document.getElementById('siteSelect').value,
             client_company: document.getElementById('clientCompany').value || "", 
             headcount: Number(document.getElementById('headcount').value) || 1,
             worker_name: comp.myName,
             others: document.getElementById('others').value || "",
-            // 💡 経費項目を追加
             gasoline: Number(document.getElementById('expGas').value) || 0,
             highway: Number(document.getElementById('expHigh').value) || 0,
             parking: Number(document.getElementById('expPark').value) || 0,
@@ -350,7 +346,6 @@
             if (!res.ok) throw new Error();
             alert('出面と経費を正常に送信しました！');
             
-            // 💡 送信成功後、出面と経費の入力欄をすべて綺麗にリセット
             document.getElementById('siteSelect').value = '';
             document.getElementById('clientCompany').value = ''; 
             document.getElementById('headcount').value = '1';
@@ -383,7 +378,9 @@
         btn.disabled = true; 
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 送信中...';
 
+        // 💡 認証：経費単体送信の場合も、license_key をしっかり埋め込む
         const payload = {
+            license_key: comp.url,
             work_date: document.getElementById('workDate').value,
             site_name: "経費精算",
             worker_name: comp.myName,
@@ -430,7 +427,8 @@
         try {
             for (let comp of companies) {
                 try {
-                    const attRes = await fetch(`${SUPABASE_URL}/attendance?worker_name=eq.${encodeURIComponent(comp.myName)}`, { headers: supabaseHeaders });
+                    // 💡 認証：自分の出面履歴を集計する際も、その会社の license_key でしっかり絞り込み
+                    const attRes = await fetch(`${SUPABASE_URL}/attendance?worker_name=eq.${encodeURIComponent(comp.myName)}&license_key=eq.${encodeURIComponent(comp.url)}`, { headers: supabaseHeaders });
                     const attRecords = await attRes.json();
                     
                     let wage = comp.wage || 0;
