@@ -58,25 +58,24 @@
 
             <label>応援・その他</label>
             <textarea id="others" rows="3" placeholder="備考や応援者名など"></textarea>
-
-            <button type="submit" id="submitBtn" style="margin-bottom: 30px;">出面を送信</button>
-        </form>
-        
-        <div style="border-top: 2px dashed #ccc; padding-top: 20px;">
-            <h3 style="margin-top: 0; color: #d32f2f;">💰 経費の追加送信</h3>
-            <p style="font-size:12px; color:#666; margin-top:-5px;">※必ず「出面」を送信した後に、後から送信してください。</p>
             
-            <div style="display:flex; gap:10px; margin-bottom:10px;">
-                <div style="flex:1;"><label>ガソリン</label><input type="number" id="expGas" placeholder="例: 1000" style="margin-bottom:0;"></div>
-                <div style="flex:1;"><label>高速</label><input type="number" id="expHigh" placeholder="例: 800" style="margin-bottom:0;"></div>
+            <div style="border-top: 2px dashed #ccc; padding-top: 20px; margin-bottom: 20px;">
+                <h3 style="margin-top: 0; color: #d32f2f; font-size: 16px;">💰 経費の同時入力</h3>
+                <p style="font-size:12px; color:#666; margin-top:-5px;">※経費がある場合は、出面と一緒にそのまま入力して送信してください。</p>
+                
+                <div style="display:flex; gap:10px; margin-bottom:10px;">
+                    <div style="flex:1;"><label>ガソリン</label><input type="number" id="expGas" placeholder="例: 1000" style="margin-bottom:0;"></div>
+                    <div style="flex:1;"><label>高速</label><input type="number" id="expHigh" placeholder="例: 800" style="margin-bottom:0;"></div>
+                </div>
+                <div style="display:flex; gap:10px; margin-bottom:20px;">
+                    <div style="flex:1;"><label>駐車場</label><input type="number" id="expPark" placeholder="例: 500" style="margin-bottom:0;"></div>
+                    <div style="flex:1;"><label>雑費</label><input type="number" id="expMisc" placeholder="例: 300" style="margin-bottom:0;"></div>
+                </div>
             </div>
-            <div style="display:flex; gap:10px; margin-bottom:20px;">
-                <div style="flex:1;"><label>駐車場</label><input type="number" id="expPark" placeholder="例: 500" style="margin-bottom:0;"></div>
-                <div style="flex:1;"><label>雑費</label><input type="number" id="expMisc" placeholder="例: 300" style="margin-bottom:0;"></div>
-            </div>
-            <button type="button" id="expenseBtn" class="btn-red" onclick="submitExpense()">経費だけを送信</button>
+
+            <button type="submit" id="submitBtn" style="margin-bottom: 30px;">出面と経費を送信</button>
+        </form>
         </div>
-    </div>
 
     <!-- 集計タブ -->
     <div id="view-calendar" class="view card">
@@ -327,13 +326,19 @@
         btn.disabled = true; 
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 送信中...';
 
+        // 💡 出面データに加えて経費の入力値もまとめてpayloadに合流させる
         const payload = {
             work_date: document.getElementById('workDate').value,
             site_name: document.getElementById('siteSelect').value,
-            client_company: document.getElementById('clientCompany').value, 
+            client_company: document.getElementById('clientCompany').value || "", 
             headcount: Number(document.getElementById('headcount').value) || 1,
             worker_name: comp.myName,
-            others: document.getElementById('others').value
+            others: document.getElementById('others').value || "",
+            // 💡 経費項目を追加
+            gasoline: Number(document.getElementById('expGas').value) || 0,
+            highway: Number(document.getElementById('expHigh').value) || 0,
+            parking: Number(document.getElementById('expPark').value) || 0,
+            misc: Number(document.getElementById('expMisc').value) || 0
         };
 
         try {
@@ -343,16 +348,22 @@
                 body: JSON.stringify(payload)
             });
             if (!res.ok) throw new Error();
-            alert('出面を正常に送信しました！');
+            alert('出面と経費を正常に送信しました！');
+            
+            // 💡 送信成功後、出面と経費の入力欄をすべて綺麗にリセット
             document.getElementById('siteSelect').value = '';
             document.getElementById('clientCompany').value = ''; 
             document.getElementById('headcount').value = '1';
             document.getElementById('others').value = '';
+            document.getElementById('expGas').value = '';
+            document.getElementById('expHigh').value = '';
+            document.getElementById('expPark').value = '';
+            document.getElementById('expMisc').value = '';
         } catch (err) {
             alert('エラーが発生しました。');
         } finally {
             btn.disabled = false; 
-            btn.innerText = '出面を送信'; 
+            btn.innerText = '出面と経費を送信'; 
         }
     }
 
