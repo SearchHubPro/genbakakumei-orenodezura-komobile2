@@ -120,8 +120,11 @@
 </div>
 
 <script>
+    <script>
     const SUPABASE_URL = "https://gifwnwwxviasnsjqyyzr.supabase.co/rest/v1";
     const SUPABASE_KEY = "sb_publishable_Vhhe7TrF5XsP6vF_xOm_Kw_P2R0B5wi";
+    
+    // 💡 修正点：PC版・親モバイル版と100%同じヘッダー構造にして、認証の壁を突破する
     const supabaseHeaders = {
         "apikey": SUPABASE_KEY,
         "Authorization": `Bearer ${SUPABASE_KEY}`,
@@ -145,8 +148,15 @@
         }
     });
 
-    function makeHeaders() {
-        return supabaseHeaders;
+    function makeHeaders(currentKey) {
+        // 💡 常に親方のライセンスキーをヘッダーに刻印してSupabaseのセキュリティ（RLS）の壁をぶち破る
+        const headers = { ...supabaseHeaders };
+        if (currentKey) {
+            headers["x-license-key"] = currentKey;
+        } else if (companies[activeIndex] && companies[activeIndex].url) {
+            headers["x-license-key"] = companies[activeIndex].url;
+        }
+        return headers;
     }
 
     function setupCalMonthSelect() {
@@ -179,9 +189,12 @@
         sel.innerHTML = '<option value="" disabled selected>読込中...</option>';
         btn.disabled = true;
 
+        // 💡 この通信専用にライセンスキー付きのヘッダーを作成
+        const dynamicHeaders = makeHeaders(key);
+
         try {
             // 💡 1. ライセンスの有効性を確認
-            const res = await fetch(`${SUPABASE_URL}/licenses?license_key=eq.${encodeURIComponent(key)}&pin_code=eq.${encodeURIComponent(pin)}`, { headers: supabaseHeaders });
+            const res = await fetch(`${SUPABASE_URL}/licenses?license_key=eq.${encodeURIComponent(key)}&pin_code=eq.${encodeURIComponent(pin)}`, { headers: dynamicHeaders });
             const licJson = await res.json();
             
             if (!licJson || !Array.isArray(licJson) || licJson.length === 0 || !licJson[0] || !licJson[0].is_active) {
@@ -193,38 +206,31 @@
 
             // 💡 2. まずは stripe_customer_id で名簿を探してみる
             if (customerId) {
-                const workerRes = await fetch(`${SUPABASE_URL}/workers?stripe_customer_id=eq.${encodeURIComponent(customerId)}`, { headers: supabaseHeaders });
+                const workerRes = await fetch(`${SUPABASE_URL}/workers?stripe_customer_id=eq.${encodeURIComponent(customerId)}`, { headers: dynamicHeaders });
                 const workerJson = await workerRes.json();
-                if (Array.isArray(workerJson)) {
-                    workers = workerJson;
-                }
+                if (Array.isArray(workerJson)) workers = workerJson;
             }
             
-            // 💡 3. もし上ので取れなければ、予備として license_key で名簿を探してみる
+            // 💡 3. 予備として license_key で名簿を探してみる
             if (workers.length === 0) {
-                const workerResAlt = await fetch(`${SUPABASE_URL}/workers?license_key=eq.${encodeURIComponent(key)}`, { headers: supabaseHeaders });
+                const workerResAlt = await fetch(`${SUPABASE_URL}/workers?license_key=eq.${encodeURIComponent(key)}`, { headers: dynamicHeaders });
                 const workerJsonAlt = await workerResAlt.json();
-                if (Array.isArray(workerJsonAlt)) {
-                    workers = workerJsonAlt;
-                }
+                if (Array.isArray(workerJsonAlt)) workers = workerJsonAlt;
             }
 
-            // 💡 4. それでもダメなら、奥の手（絞り込みなしで全件取得してアプリ側で探す）
+            // 💡 4. 最後の手段（全件取得してアプリ側で探す）
             if (workers.length === 0) {
-                const workerResAll = await fetch(`${SUPABASE_URL}/workers`, { headers: supabaseHeaders });
+                const workerResAll = await fetch(`${SUPABASE_URL}/workers`, { headers: dynamicHeaders });
                 const workerJsonAll = await workerResAll.json();
                 if (Array.isArray(workerJsonAll)) {
-                    // アプリ側で一致するものをフィルター
                     workers = workerJsonAll.filter(w => w.license_key === key || w.stripe_customer_id === customerId);
                 }
             }
             
-            // 🚨 【安全ガード】ここに来てもまだ配列じゃなければエラーにする
             if (!Array.isArray(workers) || workers.length === 0) {
                 throw new Error('会社情報は見つかりましたが、登録されているメンバー（名簿）が0件、またはテーブルの列名が一致しません。親方画面でメンバーを登録しているか確認してください。');
             }
             
-            // 💡 5. セレクトボックスに名前をセット
             sel.innerHTML = '<option value="" disabled selected>名前を選択してください</option>';
             workers.forEach(w => {
                 if (w && w.name) {
@@ -325,8 +331,8 @@
         const comp = companies[activeIndex];
         if (!comp) return;
         try {
-            // 💡 認証：保存されている親方のライセンスキーを使って現場（sites）を取得
-            const res = await fetch(`${SUPABASE_URL}/sites?license_key=eq.${encodeURIComponent(comp.url)}`, { headers: supabaseHeaders });
+            // 💡 認証：保存されている親方のライセンスキーをヘッダーに載せて現場（sites）を取得
+            const res = await fetch(`${SUPABASE_URL}/sites?license_key=eq.${encodeURIComponent(comp.url)}`, { headers: makeHeaders() });
             const sites = await res.json();
             currentSitesData = sites;
 
@@ -357,7 +363,6 @@
         btn.disabled = true; 
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 送信中...';
 
-        // 💡 認証：データ（payload）の中に、この会社の license_key をしっかりと埋め込む
         const payload = {
             license_key: comp.url,
             work_date: document.getElementById('workDate').value,
@@ -373,9 +378,10 @@
         };
 
         try {
+            // 💡 送信時も親方のライセンスキーヘッダーを付与
             const res = await fetch(`${SUPABASE_URL}/attendance`, {
                 method: 'POST',
-                headers: supabaseHeaders,
+                headers: makeHeaders(),
                 body: JSON.stringify(payload)
             });
             if (!res.ok) throw new Error();
@@ -413,7 +419,6 @@
         btn.disabled = true; 
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 送信中...';
 
-        // 💡 認証：経費単体送信の場合も、license_key をしっかり埋め込む
         const payload = {
             license_key: comp.url,
             work_date: document.getElementById('workDate').value,
@@ -429,7 +434,7 @@
         try {
             const res = await fetch(`${SUPABASE_URL}/attendance`, {
                 method: 'POST',
-                headers: supabaseHeaders,
+                headers: makeHeaders(),
                 body: JSON.stringify(payload)
             });
             if (!res.ok) throw new Error();
@@ -462,8 +467,8 @@
         try {
             for (let comp of companies) {
                 try {
-                    // 💡 認証：自分の出面履歴を集計する際も、その会社の license_key でしっかり絞り込み
-                    const attRes = await fetch(`${SUPABASE_URL}/attendance?worker_name=eq.${encodeURIComponent(comp.myName)}&license_key=eq.${encodeURIComponent(comp.url)}`, { headers: supabaseHeaders });
+                    // 💡 集計時も親方のライセンスキーヘッダーを付与してデータをぶっこ抜く
+                    const attRes = await fetch(`${SUPABASE_URL}/attendance?worker_name=eq.${encodeURIComponent(comp.myName)}&license_key=eq.${encodeURIComponent(comp.url)}`, { headers: makeHeaders() });
                     const attRecords = await attRes.json();
                     
                     let wage = comp.wage || 0;
