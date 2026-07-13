@@ -180,7 +180,7 @@
         btn.disabled = true;
 
         try {
-            // 💡 認証：入力されたライセンスキーで有効性を確認
+            // 💡 認証：入力されたライセンスキーとPINで有効性を確認し、親方の情報を取得
             const res = await fetch(`${SUPABASE_URL}/licenses?license_key=eq.${encodeURIComponent(key)}&pin_code=eq.${encodeURIComponent(pin)}`, { headers: supabaseHeaders });
             const licJson = await res.json();
             
@@ -188,9 +188,26 @@
                 throw new Error('キーまたはPINが間違っているか、無効なアカウントです。');
             }
 
-            // 💡 認証：名簿（workers）を取得する際にも入力されたライセンスキーで絞り込み
-            const workerRes = await fetch(`${SUPABASE_URL}/workers?license_key=eq.${encodeURIComponent(key)}`, { headers: supabaseHeaders });
+            // 🎯 親方の顧客ID（stripe_customer_id）を取得
+            const customerId = licJson[0].stripe_customer_id;
+
+            // 💡 修正点：workers（名簿）を取得する際は、license_keyではなくstripe_customer_id（または紐づいている列名）で探す
+            // ※もし名簿テーブル側も license_key で保存している場合はここを元に戻すか、テーブルの列名に合わせてください
+            const workerRes = await fetch(`${SUPABASE_URL}/workers?stripe_customer_id=eq.${encodeURIComponent(customerId)}`, { headers: supabaseHeaders });
             const workers = await workerRes.json();
+            
+            if (!workers || workers.length === 0) {
+                // もしcustomer_idでダメなら、予備としてlicense_keyでも探してみる
+                const workerResAlt = await fetch(`${SUPABASE_URL}/workers?license_key=eq.${encodeURIComponent(key)}`, { headers: supabaseHeaders });
+                const workersAlt = await workerResAlt.json();
+                if (workersAlt && workersAlt.length > 0) {
+                    workers.push(...workersAlt);
+                }
+            }
+
+            if (!workers || workers.length === 0) {
+                throw new Error('会社情報は見つかりましたが、登録されているメンバー（名簿）が0件です。親方画面でメンバーを登録してください。');
+            }
             
             sel.innerHTML = '<option value="" disabled selected>名前を選択してください</option>';
             workers.forEach(w => {
