@@ -180,7 +180,7 @@
         btn.disabled = true;
 
         try {
-            // 💡 認証：入力されたライセンスキーとPINで有効性を確認し、親方の情報を取得
+            // 💡 1. ライセンスの有効性を確認
             const res = await fetch(`${SUPABASE_URL}/licenses?license_key=eq.${encodeURIComponent(key)}&pin_code=eq.${encodeURIComponent(pin)}`, { headers: supabaseHeaders });
             const licJson = await res.json();
             
@@ -188,30 +188,48 @@
                 throw new Error('キーまたはPINが間違っているか、無効なアカウントです。');
             }
 
-            // 🎯 親方の顧客ID（stripe_customer_id）を取得
             const customerId = licJson[0].stripe_customer_id;
+            let workers = [];
 
-            // 💡 修正点：workers（名簿）を取得する際は、license_keyではなくstripe_customer_id（または紐づいている列名）で探す
-            // ※もし名簿テーブル側も license_key で保存している場合はここを元に戻すか、テーブルの列名に合わせてください
-            const workerRes = await fetch(`${SUPABASE_URL}/workers?stripe_customer_id=eq.${encodeURIComponent(customerId)}`, { headers: supabaseHeaders });
-            const workers = await workerRes.json();
+            // 💡 2. まずは stripe_customer_id で名簿を探してみる
+            if (customerId) {
+                const workerRes = await fetch(`${SUPABASE_URL}/workers?stripe_customer_id=eq.${encodeURIComponent(customerId)}`, { headers: supabaseHeaders });
+                const workerJson = await workerRes.json();
+                if (Array.isArray(workerJson)) {
+                    workers = workerJson;
+                }
+            }
             
-            if (!workers || workers.length === 0) {
-                // もしcustomer_idでダメなら、予備としてlicense_keyでも探してみる
+            // 💡 3. もし上ので取れなければ、予備として license_key で名簿を探してみる
+            if (workers.length === 0) {
                 const workerResAlt = await fetch(`${SUPABASE_URL}/workers?license_key=eq.${encodeURIComponent(key)}`, { headers: supabaseHeaders });
-                const workersAlt = await workerResAlt.json();
-                if (workersAlt && workersAlt.length > 0) {
-                    workers.push(...workersAlt);
+                const workerJsonAlt = await workerResAlt.json();
+                if (Array.isArray(workerJsonAlt)) {
+                    workers = workerJsonAlt;
                 }
             }
 
-            if (!workers || workers.length === 0) {
-                throw new Error('会社情報は見つかりましたが、登録されているメンバー（名簿）が0件です。親方画面でメンバーを登録してください。');
+            // 💡 4. それでもダメなら、奥の手（絞り込みなしで全件取得してアプリ側で探す）
+            if (workers.length === 0) {
+                const workerResAll = await fetch(`${SUPABASE_URL}/workers`, { headers: supabaseHeaders });
+                const workerJsonAll = await workerResAll.json();
+                if (Array.isArray(workerJsonAll)) {
+                    // アプリ側で一致するものをフィルター
+                    workers = workerJsonAll.filter(w => w.license_key === key || w.stripe_customer_id === customerId);
+                }
             }
             
+            // 🚨 【安全ガード】ここに来てもまだ配列じゃなければエラーにする
+            if (!Array.isArray(workers) || workers.length === 0) {
+                throw new Error('会社情報は見つかりましたが、登録されているメンバー（名簿）が0件、またはテーブルの列名が一致しません。親方画面でメンバーを登録しているか確認してください。');
+            }
+            
+            // 💡 5. セレクトボックスに名前をセット
             sel.innerHTML = '<option value="" disabled selected>名前を選択してください</option>';
             workers.forEach(w => {
-                sel.innerHTML += `<option value="${w.name}">${w.name}</option>`;
+                if (w && w.name) {
+                    sel.innerHTML += `<option value="${w.name}">${w.name}</option>`;
+                }
             });
             alert('名簿の読み込みに成功しました！名前を選んで追加に進んでください。');
         } catch (err) {
