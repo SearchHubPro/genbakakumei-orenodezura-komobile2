@@ -145,6 +145,12 @@
     document.addEventListener('DOMContentLoaded', () => {
         const today = new Date();
         document.getElementById('workDate').value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        
+        // 💡 追加：日付・現場のいずれかが変わったら登録済みのデータを自動検索して表示する
+        ['workDate', 'siteSelect'].forEach(id => {
+            document.getElementById(id).addEventListener('change', loadExistingAttendanceForChild);
+        });
+
         setupCalMonthSelect();
         renderCompanies();
         if (companies.length === 0) {
@@ -357,6 +363,53 @@
         const companyInput = document.getElementById('clientCompany');
         const siteInfo = currentSitesData.find(s => s.name === siteName);
         companyInput.value = (siteInfo && siteInfo.company) ? siteInfo.company : '';
+    }
+
+    // 💡 追加：既存データをSupabaseから読み込んで画面に自動表示する関数
+    async function loadExistingAttendanceForChild() {
+        const comp = companies[activeIndex];
+        if (!comp) return;
+
+        const workDateVal = document.getElementById('workDate').value;
+        const siteNameVal = document.getElementById('siteSelect').value;
+        const workerNameVal = comp.myName;
+
+        // 条件が揃っていないときは何もしない
+        if (!workDateVal || !siteNameVal || !workerNameVal) return;
+
+        try {
+            const searchUrl = `${SUPABASE_URL}/attendance?work_date=eq.${encodeURIComponent(workDateVal)}&worker_name=eq.${encodeURIComponent(workerNameVal)}&site_name=eq.${encodeURIComponent(siteNameVal)}`;
+            const res = await fetch(searchUrl, { headers: makeHeaders() });
+            if (!res.ok) return;
+
+            const existingRecords = await res.json();
+
+            if (existingRecords && existingRecords.length > 0) {
+                // 🎉 データが見つかったら画面に自動セット
+                const record = existingRecords[0];
+                document.getElementById('headcount').value = record.headcount || 1;
+                document.getElementById('clientCompany').value = record.client_company || "";
+                document.getElementById('others').value = record.others || "";
+                document.getElementById('expGas').value = record.gasoline || 0;
+                document.getElementById('expHigh').value = record.highway || 0;
+                document.getElementById('expPark').value = record.parking || 0;
+                document.getElementById('expMisc').value = record.misc || 0;
+                
+                // 上書き時に重複して半分になるのを防ぐため、半日チェックは外す
+                document.getElementById('halfDayCheck').checked = false;
+            } else {
+                // 📝 新規の場合は初期状態に戻す
+                document.getElementById('headcount').value = 1;
+                document.getElementById('others').value = "";
+                document.getElementById('expGas').value = 0;
+                document.getElementById('expHigh').value = 0;
+                document.getElementById('expPark').value = 0;
+                document.getElementById('expMisc').value = 0;
+                document.getElementById('halfDayCheck').checked = false;
+            }
+        } catch (err) {
+            console.error("既存データの自動取得に失敗しました:", err);
+        }
     }
 
     async function submitAttendance(e) {
