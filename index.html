@@ -55,6 +55,13 @@
             <label>人数</label>
             <input type="number" id="headcount" value="1" min="1" required style="font-weight:bold; color:#1a73e8;">
 
+            <div style="margin-bottom: 20px; background: #fff3cd; padding: 10px; border-radius: 8px; border: 1px solid #ffeeba;">
+                <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 0; cursor: pointer; color: #856404;">
+                    <input type="checkbox" id="halfDayCheck" style="width: 20px; height: 20px; margin-bottom: 0; cursor: pointer;">
+                    <span>⚠️ 今回の出面を「半日（人工半分）」にする</span>
+                </label>
+            </div>
+
             <label>応援・その他</label>
             <textarea id="others" rows="3" placeholder="備考や応援者名など"></textarea>
             
@@ -382,12 +389,29 @@
             const siteNameVal = document.getElementById('siteSelect').value;
             const workerNameVal = comp.myName;
 
+            // 💡 人数の基本値を取得
+            let finalHeadcount = Number(document.getElementById('headcount').value) || 1;
+
+            // 💡 半日チェックが入っているか確認
+            const isHalfDay = document.getElementById('halfDayCheck').checked;
+            if (isHalfDay) {
+                // 人数を半分（0.5倍）にする計算
+                const calculatedHalf = finalHeadcount * 0.5;
+                // 間違い防止の確認ウィンドウを出す
+                if (!confirm(`⚠️ 半日チェックが入っています。\n\n人工を半分にして【 ${calculatedHalf} 人工 】で登録しますがよろしいですか？`)) {
+                    btn.disabled = false; 
+                    btn.innerText = '出面と経費を送信';
+                    return; // キャンセルしたら処理を中断
+                }
+                finalHeadcount = calculatedHalf;
+            }
+
             const payload = {
                 license_key: comp.url,
                 work_date: workDateVal,
                 site_name: siteNameVal,
                 client_company: document.getElementById('clientCompany').value || "", 
-                headcount: Number(document.getElementById('headcount').value) || 1,
+                headcount: finalHeadcount, // 💡 計算後の人工数をセット
                 worker_name: workerNameVal,
                 others: document.getElementById('others').value || "",
                 gasoline: Number(document.getElementById('expGas').value) || 0,
@@ -395,6 +419,8 @@
                 parking: Number(document.getElementById('expPark').value) || 0,
                 misc: Number(document.getElementById('expMisc').value) || 0
             };
+
+            // 1. データベースに「同じ日付・名前・現場」の既存データがないか確認する
 
             // 1. データベースに「同じ日付・名前・現場」の既存データがないか確認する
             const searchUrl = `${SUPABASE_URL}/attendance?work_date=eq.${encodeURIComponent(workDateVal)}&worker_name=eq.${encodeURIComponent(workerNameVal)}&site_name=eq.${encodeURIComponent(siteNameVal)}`;
