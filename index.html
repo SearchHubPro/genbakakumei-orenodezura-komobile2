@@ -377,25 +377,44 @@
         };
 
         try {
-            // 💡 同じ日付・名前・現場のデータがあるかまず検索する
-            const searchUrl = `${SUPABASE_URL}/attendance?work_date=eq.${encodeURIComponent(workDate)}&worker_name=eq.${encodeURIComponent(workerName)}&site_name=eq.${encodeURIComponent(siteName)}`;
-            const checkRes = await fetch(searchUrl, { headers: supabaseHeaders });
+            // 💡 子モバイル版の正しい入力値と変数名を取得
+            const workDateVal = document.getElementById('workDate').value;
+            const siteNameVal = document.getElementById('siteSelect').value;
+            const workerNameVal = comp.myName;
+
+            const payload = {
+                license_key: comp.url,
+                work_date: workDateVal,
+                site_name: siteNameVal,
+                client_company: document.getElementById('clientCompany').value || "", 
+                headcount: Number(document.getElementById('headcount').value) || 1,
+                worker_name: workerNameVal,
+                others: document.getElementById('others').value || "",
+                gasoline: Number(document.getElementById('expGas').value) || 0,
+                highway: Number(document.getElementById('expHigh').value) || 0,
+                parking: Number(document.getElementById('expPark').value) || 0,
+                misc: Number(document.getElementById('expMisc').value) || 0
+            };
+
+            // 1. データベースに「同じ日付・名前・現場」の既存データがないか確認する
+            const searchUrl = `${SUPABASE_URL}/attendance?work_date=eq.${encodeURIComponent(workDateVal)}&worker_name=eq.${encodeURIComponent(workerNameVal)}&site_name=eq.${encodeURIComponent(siteNameVal)}`;
+            const checkRes = await fetch(searchUrl, { headers: makeHeaders() });
             const existingRecords = await checkRes.json();
 
             let res;
             if (existingRecords && existingRecords.length > 0) {
-                // 💡 既存データがあれば、そのIDに対して上書き（PATCH）する
+                // 2. 【既存データがある場合】➔ 上書き（PATCH）する
                 const targetId = existingRecords[0].id;
                 res = await fetch(`${SUPABASE_URL}/attendance?id=eq.${targetId}`, {
                     method: 'PATCH',
-                    headers: supabaseHeaders,
+                    headers: makeHeaders(),
                     body: JSON.stringify(payload)
                 });
             } else {
-                // 💡 なければ新規登録（POST）する
+                // 3. 【既存データがない場合】➔ 新規作成（POST）する
                 res = await fetch(`${SUPABASE_URL}/attendance`, {
                     method: 'POST',
-                    headers: supabaseHeaders,
+                    headers: makeHeaders(),
                     body: JSON.stringify(payload)
                 });
             }
