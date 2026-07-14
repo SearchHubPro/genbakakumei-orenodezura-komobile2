@@ -366,13 +366,16 @@
     }
 
     // 💡 追加：既存データをSupabaseから読み込んで画面に自動表示する関数
+    // 💡 追加：既存データをSupabaseから読み込んで画面に自動表示する関数
     async function loadExistingAttendanceForChild() {
+        // 現在アクティブな送信先設定（名前）を確実に取得する
+        if (!companies || companies.length === 0 || activeIndex === undefined) return;
         const comp = companies[activeIndex];
-        if (!comp) return;
+        if (!comp || !comp.myName) return;
 
         const workDateVal = document.getElementById('workDate').value;
         const siteNameVal = document.getElementById('siteSelect').value;
-        const workerNameVal = comp.myName;
+        const workerNameVal = comp.myName; // 💡 これで確実に「ログイン中の子方の名前」が引っかかります
 
         // 条件が揃っていないときは何もしない
         if (!workDateVal || !siteNameVal || !workerNameVal) return;
@@ -387,7 +390,9 @@
             if (existingRecords && existingRecords.length > 0) {
                 // 🎉 データが見つかったら画面に自動セット
                 const record = existingRecords[0];
-                document.getElementById('headcount').value = record.headcount || 1;
+                
+                // 💡 headcount が 0（経費のみの登録など）の場合もあるため、そのまま値を引き継ぐ
+                document.getElementById('headcount').value = record.headcount !== undefined ? record.headcount : 1;
                 document.getElementById('clientCompany').value = record.client_company || "";
                 document.getElementById('others').value = record.others || "";
                 document.getElementById('expGas').value = record.gasoline || 0;
@@ -398,13 +403,13 @@
                 // 上書き時に重複して半分になるのを防ぐため、半日チェックは外す
                 document.getElementById('halfDayCheck').checked = false;
             } else {
-                // 📝 新規の場合は初期状態に戻す
+                // 📝 新規の場合は初期状態（1人、その他経費は空）に戻す
                 document.getElementById('headcount').value = 1;
                 document.getElementById('others').value = "";
-                document.getElementById('expGas').value = 0;
-                document.getElementById('expHigh').value = 0;
-                document.getElementById('expPark').value = 0;
-                document.getElementById('expMisc').value = 0;
+                document.getElementById('expGas').value = "";
+                document.getElementById('expHigh').value = "";
+                document.getElementById('expPark').value = "";
+                document.getElementById('expMisc').value = "";
                 document.getElementById('halfDayCheck').checked = false;
             }
         } catch (err) {
