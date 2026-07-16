@@ -102,6 +102,10 @@
             <button type="button" class="btn-red" style="padding:10px; font-size:14px; margin-bottom:20px;" onclick="fetchMastersForSetup(this)">① 情報を読み込む</button>
             
             <label>自分の名前</label><select id="newCompMyName" required><option value="" disabled selected>先に情報を読み込んでください</option></select>
+
+            <!-- 💡 復活させた「自分のPIN」入力欄 -->
+            <label>自分の暗証番号 (4桁)</label>
+            <input type="password" id="mySecretPin" placeholder="親方が決めた4桁の数字" maxlength="4" style="border-color:#e53935; background:#ffebee;">
             
             <hr style="border: 0; border-top: 1px dashed #ccc; margin: 20px 0;">
             <p style="font-size:13px; color:#666; font-weight:bold; margin-top:0;">▼ 給与計算用設定</p>
