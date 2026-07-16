@@ -196,6 +196,9 @@
         btn.classList.add('active');
     }
 
+    // 💡 グローバル変数（データの避難所）を追加
+    let currentWorkerMaster = [];
+
     async function fetchMastersForSetup(btn) {
         const key = document.getElementById('newLicenseKey').value.trim();
         const pin = document.getElementById('newCompPin').value.trim();
@@ -205,11 +208,9 @@
         sel.innerHTML = '<option value="" disabled selected>読込中...</option>';
         btn.disabled = true;
 
-        // 💡 この通信専用にライセンスキー付きのヘッダーを作成
         const dynamicHeaders = makeHeaders(key);
 
         try {
-            // 💡 1. ライセンスの有効性を確認
             const res = await fetch(`${SUPABASE_URL}/licenses?license_key=eq.${encodeURIComponent(key)}&pin_code=eq.${encodeURIComponent(pin)}`, { headers: dynamicHeaders });
             const licJson = await res.json();
             
@@ -220,21 +221,18 @@
             const customerId = licJson[0].stripe_customer_id;
             let workers = [];
 
-            // 💡 2. まずは stripe_customer_id で名簿を探してみる
             if (customerId) {
                 const workerRes = await fetch(`${SUPABASE_URL}/workers?stripe_customer_id=eq.${encodeURIComponent(customerId)}`, { headers: dynamicHeaders });
                 const workerJson = await workerRes.json();
                 if (Array.isArray(workerJson)) workers = workerJson;
             }
             
-            // 💡 3. 予備として license_key で名簿を探してみる
             if (workers.length === 0) {
                 const workerResAlt = await fetch(`${SUPABASE_URL}/workers?license_key=eq.${encodeURIComponent(key)}`, { headers: dynamicHeaders });
                 const workerJsonAlt = await workerResAlt.json();
                 if (Array.isArray(workerJsonAlt)) workers = workerJsonAlt;
             }
 
-            // 💡 4. 最後の手段（全件取得してアプリ側で探す）
             if (workers.length === 0) {
                 const workerResAll = await fetch(`${SUPABASE_URL}/workers`, { headers: dynamicHeaders });
                 const workerJsonAll = await workerResAll.json();
@@ -244,7 +242,7 @@
             }
             
             if (!Array.isArray(workers) || workers.length === 0) {
-                throw new Error('会社情報は見つかりましたが、登録されているメンバー（名簿）が0件、またはテーブルの列名が一致しません。親方画面でメンバーを登録しているか確認してください。');
+                throw new Error('名簿が0件です。親方画面でメンバーを登録しているか確認してください。');
             }
             
             sel.innerHTML = '<option value="" disabled selected>名前を選択してください</option>';
@@ -253,6 +251,10 @@
                     sel.innerHTML += `<option value="${w.name}">${w.name}</option>`;
                 }
             });
+
+            // 💡 ここで読み込んだ名簿データを変数にまるごと保存！
+            currentWorkerMaster = workers;
+
             alert('名簿の読み込みに成功しました！名前を選んで追加に進んでください。');
         } catch (err) {
             alert('読み込み失敗: ' + err.message);
@@ -262,41 +264,41 @@
         }
     }
 
-    // 💡 取得した名簿データを一時保存しておくためのグローバル変数を追加（関数の外に追記）
-    let currentWorkerMaster = [];
-
-    // 💡 fetchMastersForSetup関数の最後の方に、取得した名簿を保存する処理を追加
-    //   sel.innerHTML = '<option value="" disabled selected>名前を選択してください</option>';
-    //   workers.forEach(w => { ... });
-    //   currentWorkerMaster = workers; // 👈 この1行を追加
-
     function addCompany() {
         const name = document.getElementById('newCompName').value.trim();
         const key = document.getElementById('newLicenseKey').value.trim();
         const myName = document.getElementById('newCompMyName').value.trim();
-        const parentPin = document.getElementById('newCompPin').value.trim(); // 親方の8桁PIN
+        const parentPin = document.getElementById('newCompPin').value.trim();
         const myPin = document.getElementById('mySecretPin').value.trim(); // 💡 自分の4桁PINを取得
         const wage = Number(document.getElementById('newCompWage').value) || 0;
         const taxType = document.getElementById('newCompTax').value; 
         const closingDate = Number(document.getElementById('newCompClosing').value);
         const payDate = document.getElementById('newCompPay').value.trim() || '未設定';
         
-        if (!name || !key || !myName || !parentPin) return alert('会社名、キー、名前、親方PINは必須です');
+        if (!name || !key || !myName || !parentPin) return alert('会社名、キー、名前、親方PIN(8桁)は必須です');
         if (!myPin || myPin.length !== 4) return alert('自分の暗証番号（4桁）を正しく入力してください');
 
-        // 💡 選択した名前と、入力された4桁PINが合っているかチェック
+        // 💡 Supabaseから読み込んだ名簿の中から、選んだ名前のデータを引っ張り出す
         const targetWorker = currentWorkerMaster.find(w => w.name === myName);
-        if (!targetWorker || String(targetWorker.pin) !== String(myPin)) {
+        
+        if (!targetWorker) {
+            return alert('❌ 名簿データが見つかりません。もう一度「① 情報を読み込む」を押してください。');
+        }
+        
+        // 💡 データベースに登録されているPINと、いま入力されたPINが合致するかチェック
+        if (String(targetWorker.pin) !== String(myPin)) {
             return alert('❌ 暗証番号（4桁）が間違っています。\n正しい番号を入力しないと登録できません。');
         }
         
-        // 💡 登録処理（保存するPINは親方の8桁ではなく、自分の4桁PINを保存する仕様なら myPin を渡す）
+        // 💡 全て合致したら晴れて登録！
         companies.push({ name, url: key, myName, pin: myPin, wage, taxType, closingDate, payDate });
+        saveData();
         
         document.getElementById('newCompName').value = '';
         document.getElementById('newLicenseKey').value = '';
         document.getElementById('newCompMyName').innerHTML = '<option value="" disabled selected>先に情報を読み込んでください</option>';
         document.getElementById('newCompPin').value = '';
+        document.getElementById('mySecretPin').value = ''; // 💡 PIN入力欄もクリア
         document.getElementById('newCompWage').value = '';
         document.getElementById('newCompPay').value = '';
         
