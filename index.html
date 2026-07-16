@@ -262,20 +262,36 @@
         }
     }
 
+    // 💡 取得した名簿データを一時保存しておくためのグローバル変数を追加（関数の外に追記）
+    let currentWorkerMaster = [];
+
+    // 💡 fetchMastersForSetup関数の最後の方に、取得した名簿を保存する処理を追加
+    //   sel.innerHTML = '<option value="" disabled selected>名前を選択してください</option>';
+    //   workers.forEach(w => { ... });
+    //   currentWorkerMaster = workers; // 👈 この1行を追加
+
     function addCompany() {
         const name = document.getElementById('newCompName').value.trim();
         const key = document.getElementById('newLicenseKey').value.trim();
         const myName = document.getElementById('newCompMyName').value.trim();
-        const pin = document.getElementById('newCompPin').value.trim();
+        const parentPin = document.getElementById('newCompPin').value.trim(); // 親方の8桁PIN
+        const myPin = document.getElementById('mySecretPin').value.trim(); // 💡 自分の4桁PINを取得
         const wage = Number(document.getElementById('newCompWage').value) || 0;
         const taxType = document.getElementById('newCompTax').value; 
         const closingDate = Number(document.getElementById('newCompClosing').value);
         const payDate = document.getElementById('newCompPay').value.trim() || '未設定';
         
-        if (!name || !key || !myName || !pin) return alert('会社名、キー、自分の名前、PINコードは必須です');
+        if (!name || !key || !myName || !parentPin) return alert('会社名、キー、名前、親方PINは必須です');
+        if (!myPin || myPin.length !== 4) return alert('自分の暗証番号（4桁）を正しく入力してください');
+
+        // 💡 選択した名前と、入力された4桁PINが合っているかチェック
+        const targetWorker = currentWorkerMaster.find(w => w.name === myName);
+        if (!targetWorker || String(targetWorker.pin) !== String(myPin)) {
+            return alert('❌ 暗証番号（4桁）が間違っています。\n正しい番号を入力しないと登録できません。');
+        }
         
-        companies.push({ name, url: key, myName, pin, wage, taxType, closingDate, payDate });
-        saveData();
+        // 💡 登録処理（保存するPINは親方の8桁ではなく、自分の4桁PINを保存する仕様なら myPin を渡す）
+        companies.push({ name, url: key, myName, pin: myPin, wage, taxType, closingDate, payDate });
         
         document.getElementById('newCompName').value = '';
         document.getElementById('newLicenseKey').value = '';
