@@ -230,8 +230,15 @@
             }
 
             // 🐛→🔐 修正：workersを直接SELECTすると全員分のPIN・日当が端末に丸ごと届いてしまうため、
-            //    名前だけを返す workers_public ビューから取得する（PINはRPC照合時にのみサーバー側で使う）
-            const workerRes = await fetch(`${SUPABASE_URL}/workers_public?license_key=eq.${encodeURIComponent(key)}`, { headers: dynamicHeaders });
+            //    名前だけを返すRPC(list_workers_public)から取得する（PINはverify_worker_pin照合時にのみサーバー側で使う）
+            //    🔴 以前はworkers_publicというVIEWを使っていたが、VIEWはRLSをバイパスしてしまう
+            //       (SQL Editor作成のためpostgresロール=BYPASSRLSで動く)ことが判明したため、
+            //       関数呼び出し方式に変更。license_keyがWHERE句で確実に絞り込まれる。
+            const workerRes = await fetch(`${SUPABASE_URL}/rpc/list_workers_public`, {
+                method: 'POST',
+                headers: dynamicHeaders,
+                body: JSON.stringify({ p_license_key: key })
+            });
             const workers = await workerRes.json();
             
             if (!Array.isArray(workers) || workers.length === 0) {
