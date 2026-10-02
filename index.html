@@ -30,6 +30,31 @@
         .user-badge { background: #eee; padding: 10px; border-radius: 6px; font-size: 16px; font-weight: bold; margin-bottom: 20px; color: #555; }
         .wage-highlight { color: #d32f2f; font-size: 18px; font-weight: 900; }
         .period-label { display: inline-block; background: #1a73e8; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-bottom: 5px; }
+        /* 📅 出勤カレンダー */
+        .wcal { margin-top: 15px; border: 1px solid #ddd; border-radius: 8px; padding: 10px; background: #fff; }
+        .wcal-title { font-weight: bold; font-size: 15px; color: #1a365d; margin-bottom: 8px; }
+        .wcal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+        .wcal-wd { text-align: center; font-size: 11px; font-weight: bold; color: #666; padding: 2px 0; }
+        .wcal-wd.sun, .wcal-day.sun .wcal-num { color: #d32f2f; }
+        .wcal-wd.sat, .wcal-day.sat .wcal-num { color: #1565c0; }
+        .wcal-day { position: relative; aspect-ratio: 1 / 1.05; max-width: 100%; border: 1px solid #e5e7eb; border-radius: 6px; background: #fafafa;
+            padding: 3px 0 0; font-size: 12px; display: flex; flex-direction: column; align-items: center; gap: 1px; cursor: default; width: 100%; margin: 0; color: #333; font-weight: normal; }
+        .wcal-day.empty { border: 0; background: transparent; }
+        .wcal-day.in-period { border: 2px solid #f59e0b; }
+        .wcal-day.has { cursor: pointer; }
+        .wcal-num { font-weight: bold; line-height: 1.2; }
+        .wcal-mark { width: 22px; height: 22px; border-radius: 50%; font-size: 10px; line-height: 22px; font-weight: bold; text-align: center; }
+        .wcal-mark.full { background: #1a73e8; color: #fff; }
+        .wcal-mark.half { background: linear-gradient(90deg, #1a73e8 50%, #d6e4fb 50%); color: #fff; text-shadow: 0 0 2px #1a73e8; }
+        .wcal-mark.zero { background: #fff; color: #059669; border: 1px solid #059669; line-height: 20px; }
+        .wcal-day.selected { outline: 3px solid #d32f2f; outline-offset: -1px; }
+        .wcal-legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11px; color: #555; margin-top: 8px; align-items: center; }
+        .wcal-legend span { display: inline-flex; align-items: center; gap: 4px; }
+        .wcal-legend .wcal-mark { width: 16px; height: 16px; line-height: 16px; font-size: 9px; }
+        .wcal-legend .box { width: 14px; height: 14px; border: 2px solid #f59e0b; border-radius: 3px; display: inline-block; }
+        .wcal-note { font-size: 12px; color: #92400e; background: #fff7ed; border-radius: 6px; padding: 6px 8px; margin-top: 8px; }
+        .wcal-detail { margin-top: 8px; font-size: 13px; background: #f5f9ff; border: 1px solid #cfe0fb; border-radius: 6px; padding: 8px 10px; line-height: 1.6; }
+        .wcal-detail:empty { display: none; }
     </style>
 </head>
 <body>
@@ -475,6 +500,89 @@
         }
     }
 
+    // 📅 出勤カレンダー（選んだ月の1日〜月末。締め日が月末以外なら、給料の対象期間を枠で囲む）
+    let calStore = {};   // { 会社番号: { 'YYYY-MM-DD': [出面...] } }
+
+    function buildWorkCalendar(ci, year, month, records, closing, startStr, endStr) {
+        const prefix = `${year}-${String(month).padStart(2, '0')}`;
+        const byDay = {};
+        records.forEach(r => {
+            const d = r.work_date || '';
+            if (!d.startsWith(prefix)) return;
+            (byDay[d] = byDay[d] || []).push(r);
+        });
+        calStore[ci] = byDay;
+
+        const hcOf = r => (r.headcount === null || r.headcount === undefined) ? 1 : Number(r.headcount);
+        const first = new Date(year, month - 1, 1);
+        const lastDay = new Date(year, month, 0).getDate();
+        const wds = ['日', '月', '火', '水', '木', '金', '土'];
+        let cells = wds.map((w, i) => `<div class="wcal-wd ${i === 0 ? 'sun' : i === 6 ? 'sat' : ''}">${w}</div>`).join('');
+        for (let i = 0; i < first.getDay(); i++) cells += '<div class="wcal-day empty"></div>';
+
+        let workDays = 0;
+        for (let day = 1; day <= lastDay; day++) {
+            const ds = `${prefix}-${String(day).padStart(2, '0')}`;
+            const wd = new Date(year, month - 1, day).getDay();
+            const recs = byDay[ds] || [];
+            const total = recs.reduce((s, r) => s + hcOf(r), 0);
+            const inPeriod = closing !== 31 && ds >= startStr && ds <= endStr;
+            let mark = '';
+            if (recs.length > 0) {
+                if (total >= 1) { mark = `<span class="wcal-mark full">${total === 1 ? '' : total}</span>`; workDays++; }
+                else if (total > 0) { mark = `<span class="wcal-mark half">½</span>`; workDays++; }
+                else mark = `<span class="wcal-mark zero">¥</span>`;
+            }
+            const cls = ['wcal-day', wd === 0 ? 'sun' : wd === 6 ? 'sat' : '', inPeriod ? 'in-period' : '', recs.length ? 'has' : ''].join(' ');
+            cells += recs.length
+                ? `<button type="button" class="${cls}" data-ci="${ci}" data-date="${ds}" aria-label="${month}月${day}日の出面を見る"><span class="wcal-num">${day}</span>${mark}</button>`
+                : `<div class="${cls}"><span class="wcal-num">${day}</span></div>`;
+        }
+
+        // 締め日が月末以外：前月から給料に入っている分を1行で出す
+        let note = '';
+        if (closing !== 31) {
+            const prevRecs = records.filter(r => r.work_date >= startStr && r.work_date < `${prefix}-01`);
+            const prevDays = prevRecs.reduce((s, r) => s + hcOf(r), 0);
+            const [, sm, sd] = startStr.split('-').map(Number);
+            const prevEnd = new Date(year, month - 1, 0);
+            note = `<div class="wcal-note">前月 ${sm}/${sd}〜${prevEnd.getMonth() + 1}/${prevEnd.getDate()} の分：<b>${prevDays}</b> 人工（今回の給料に入っています）</div>`;
+        }
+
+        return `
+            <div class="wcal">
+                <div class="wcal-title">📅 ${month}月の出勤カレンダー（${workDays}日出勤）</div>
+                <div class="wcal-grid">${cells}</div>
+                <div class="wcal-legend">
+                    <span><span class="wcal-mark full"></span>1日</span>
+                    <span><span class="wcal-mark half">½</span>半日</span>
+                    <span><span class="wcal-mark zero">¥</span>経費のみ</span>
+                    ${closing !== 31 ? '<span><span class="box"></span>今回の給料の対象</span>' : ''}
+                </div>
+                ${note}
+                <div class="wcal-detail" id="wcalDetail_${ci}"></div>
+                <div style="font-size:11px; color:#888; margin-top:6px;">※印のついた日を押すと、その日の現場と経費が出ます</div>
+            </div>`;
+    }
+
+    // 日付を押したら、その日の中身を下に出す
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('.wcal-day.has');
+        if (!btn) return;
+        const ci = btn.dataset.ci, ds = btn.dataset.date;
+        const recs = (calStore[ci] || {})[ds] || [];
+        btn.closest('.wcal').querySelectorAll('.wcal-day.selected').forEach(el => el.classList.remove('selected'));
+        btn.classList.add('selected');
+        const [, m, d] = ds.split('-').map(Number);
+        const lines = recs.map(r => {
+            const hc = (r.headcount === null || r.headcount === undefined) ? 1 : Number(r.headcount);
+            const parts = [['ガソリン', r.gasoline], ['高速', r.highway], ['駐車場', r.parking], ['雑費', r.misc]]
+                .filter(([, v]) => Number(v) > 0).map(([k, v]) => `${k} ¥${Number(v).toLocaleString()}`);
+            return `🏢 <b>${esc(r.site_name)}</b>　${hc === 0 ? '経費のみ' : hc + '人工'}${parts.length ? `<br><span style="color:#059669;">💰 ${parts.join(' / ')}</span>` : ''}`;
+        });
+        document.getElementById('wcalDetail_' + ci).innerHTML = `<div style="font-weight:bold; margin-bottom:2px;">${m}月${d}日</div>${lines.join('<hr style="border:0; border-top:1px dashed #cfe0fb; margin:4px 0;">')}`;
+    });
+
     async function fetchCalendar(btn) {
         if (companies.length === 0) return alert('会社が登録されていません');
         const selectedMonthPrefix = document.getElementById('calMonthSelect').value;
@@ -493,7 +601,8 @@
         const fetchTo = fmtDate(new Date(targetYear, targetMonth, 0));
 
         try {
-            for (const comp of companies) {
+            calStore = {};
+            for (const [ci, comp] of companies.entries()) {
                 try {
                     // 親方マスターの最新の日当・締め日・税区分を使う（親方画面と同じ計算にする）
                     const [me, attRecords] = await Promise.all([
@@ -561,6 +670,7 @@
                                 ${block(cls).replace('COLOR_PLACEHOLDER', '')}
                                 <div style="font-size:12px; color:#1a73e8; margin-top:8px;">💳 支払日: ${esc(comp.payDate)}</div>
                             </div>
+                            ${buildWorkCalendar(ci, targetYear, targetMonth, Array.isArray(attRecords) ? attRecords : [], closing, startStr, endStr)}
                         </div>
                     `;
                 } catch (e) {
