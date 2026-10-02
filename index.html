@@ -96,28 +96,16 @@
     <div id="view-settings" class="view card">
         <h2>🏢 会社・個人設定</h2>
         <div style="background: #fafafa; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px dashed #ccc;">
-            <label>会社名</label><input type="text" id="newCompName" placeholder="例: （株）現場革命">
-            <label>ライセンスキー</label><input type="text" id="newLicenseKey" placeholder="メールに届いたキーを入力">
-            <label>PINコード (8桁)</label><input type="password" id="newCompPin" placeholder="8桁の数字" maxlength="8">
-            <button type="button" class="btn-red" style="padding:10px; font-size:14px; margin-bottom:20px;" onclick="fetchMastersForSetup(this)">① 情報を読み込む</button>
-            
-            <label>自分の名前</label><select id="newCompMyName" required><option value="" disabled selected>先に情報を読み込んでください</option></select>
+            <label>会社名（自分が見分けるための名前）</label><input type="text" id="newCompName" placeholder="例: （株）現場革命">
+            <label>招待コード（親方からもらったコード）</label>
+            <input type="text" id="newInviteCode" placeholder="親方からLINE等で届いたコードを貼り付け" autocomplete="off" autocapitalize="off" spellcheck="false">
 
-            <!-- 💡 復活させた「自分のPIN」入力欄 -->
             <label>自分の暗証番号 (4桁)</label>
-            <input type="password" id="mySecretPin" placeholder="親方が決めた4桁の数字" maxlength="4" style="border-color:#e53935; background:#ffebee;">
-            
-            <hr style="border: 0; border-top: 1px dashed #ccc; margin: 20px 0;">
-            <p style="font-size:13px; color:#666; font-weight:bold; margin-top:0;">▼ 給与計算用設定</p>
-            <div style="display: flex; gap: 8px;">
-                <div style="flex: 1.5;"><label>日当単価 (円)</label><input type="number" id="newCompWage" placeholder="例: 15000"></div>
-                <div style="flex: 1;"><label>消費税</label><select id="newCompTax"><option value="税込">税込</option><option value="税別">税別(+10%)</option></select></div>
-            </div>
-            <label>締め日</label>
-            <select id="newCompClosing"><option value="31">月末締め</option><option value="5">5日締め</option><option value="10">10日締め</option><option value="15">15日締め</option><option value="20">20日締め</option><option value="25">25日締め</option></select>
-            <label>支払日</label><input type="text" id="newCompPay" placeholder="例: 翌月末、翌 25 日など">
+            <input type="password" id="mySecretPin" placeholder="親方が決めた4桁の数字" maxlength="4" inputmode="numeric" style="border-color:#e53935; background:#ffebee;">
 
-            <button class="btn-gray" onclick="addCompany()">② この内容で会社を追加</button>
+            <p style="font-size:12px; color:#666; margin-top:-10px;">※日当・締め日・支払日は、親方が登録した内容が自動で使われます。</p>
+
+            <button class="btn-gray" id="addCompanyBtn" onclick="addCompany(this)">この内容で会社を追加</button>
         </div>
         <h3>登録済みの会社一覧</h3>
         <div id="companyList"></div>
@@ -133,14 +121,17 @@
     <script>
     const SUPABASE_URL = "https://gifwnwwxviasnsjqyyzr.supabase.co/rest/v1";
     const SUPABASE_KEY = "sb_publishable_Vhhe7TrF5XsP6vF_xOm_Kw_P2R0B5wi";
-    
-    // 💡 修正点：PC版・親モバイル版と100%同じヘッダー構造にして、認証の壁を突破する
-    const supabaseHeaders = {
+
+    // 🔐 子方アプリは親方のライセンスキーを一切持たない。
+    //    招待コード＋自分の4桁PINで、Supabaseの関数（child_～）を通して自分の分だけ読み書きする。
+    const baseHeaders = {
         "apikey": SUPABASE_KEY,
         "Authorization": `Bearer ${SUPABASE_KEY}`,
-        "Content-Type": "application/json",
-        "Prefer": "return=representation"
+        "Content-Type": "application/json"
     };
+
+    // 💰 単価が未設定のときの最終フォールバック（親方画面と同じ値）
+    const DEFAULT_WAGE = 15000;
 
     // 🛡️ HTMLエスケープ（会社名や現場名に " や < が入っても画面が壊れないようにする）
     function esc(v) {
@@ -148,38 +139,75 @@
         return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
-    let companies = JSON.parse(localStorage.getItem('oreno_companies')) || [];
+    // 📡 Supabaseの関数を呼ぶ共通処理（エラー時は日本語のメッセージを投げる）
+    async function rpc(name, params) {
+        const res = await fetch(`${SUPABASE_URL}/rpc/${name}`, {
+            method: 'POST',
+            headers: baseHeaders,
+            body: JSON.stringify(params)
+        });
+        const text = await res.text();
+        let data = null;
+        try { data = text ? JSON.parse(text) : null; } catch (e) { data = text; }
+        if (!res.ok) {
+            const msg = (data && data.message) ? data.message : (text || ('通信エラー ' + res.status));
+            throw new Error(msg);
+        }
+        return data;
+    }
+
+    function fmtDate(d) {
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    // 🔢 空欄なら既定値、数字でなければ null を返す（0 はそのまま 0 として扱う）
+    function readNumber(id, emptyValue) {
+        const raw = document.getElementById(id).value.trim();
+        if (raw === '') return emptyValue;
+        const n = Number(raw);
+        return Number.isFinite(n) ? n : null;
+    }
+
+    // 📦 保存データの読み込み（旧バージョンの「ライセンスキー入り」の登録は破棄する）
+    let companies = [];
+    let hadLegacyCompanies = false;
+    (function loadCompanies() {
+        let stored = [];
+        try { stored = JSON.parse(localStorage.getItem('oreno_companies')) || []; } catch (e) { stored = []; }
+        if (!Array.isArray(stored)) stored = [];
+        companies = stored.filter(c => c && c.token && c.pin);
+        if (companies.length !== stored.length) hadLegacyCompanies = true;
+        // 旧データに入っていたライセンスキー(url)は端末から消す
+        companies.forEach(c => { delete c.url; });
+    })();
     let activeIndex = parseInt(localStorage.getItem('oreno_active_index')) || 0;
+    if (activeIndex < 0 || activeIndex >= companies.length) activeIndex = 0;
     let currentSitesData = [];
 
     document.addEventListener('DOMContentLoaded', () => {
-        const today = new Date();
-        document.getElementById('workDate').value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-        
-        // 💡 追加：日付・現場のいずれかが変わったら登録済みのデータを自動検索して表示する
+        document.getElementById('workDate').value = fmtDate(new Date());
+
+        // 日付・現場のいずれかが変わったら登録済みのデータを自動検索して表示する
         ['workDate', 'siteSelect'].forEach(id => {
             document.getElementById(id).addEventListener('change', loadExistingAttendanceForChild);
         });
 
+        // 招待リンク（?invite=コード）で開かれたら、コード欄に自動で入れる
+        const inviteParam = new URLSearchParams(location.search).get('invite');
+        if (inviteParam) document.getElementById('newInviteCode').value = inviteParam.trim();
+
+        if (hadLegacyCompanies) {
+            saveData();
+            alert('🔐 セキュリティ強化のため、登録方法が変わりました。\n親方から「招待コード」をもらって、設定タブから会社を登録し直してください。');
+        }
+
         setupCalMonthSelect();
         renderCompanies();
-        if (companies.length === 0) {
+        if (companies.length === 0 || inviteParam) {
             switchView('settings', document.querySelectorAll('.tab-btn')[2]);
-        } else {
-            loadMasters();
         }
+        if (companies.length > 0) loadMasters();
     });
-
-    function makeHeaders(currentKey) {
-        // 💡 常に親方のライセンスキーをヘッダーに刻印してSupabaseのセキュリティ（RLS）の壁をぶち破る
-        const headers = { ...supabaseHeaders };
-        if (currentKey) {
-            headers["x-license-key"] = currentKey;
-        } else if (companies[activeIndex] && companies[activeIndex].url) {
-            headers["x-license-key"] = companies[activeIndex].url;
-        }
-        return headers;
-    }
 
     function setupCalMonthSelect() {
         const select = document.getElementById('calMonthSelect');
@@ -202,108 +230,50 @@
         btn.classList.add('active');
     }
 
-    // 💡 グローバル変数（データの避難所）を追加
-    let currentWorkerMaster = [];
-
-    async function fetchMastersForSetup(btn) {
-        const key = document.getElementById('newLicenseKey').value.trim();
-        const pin = document.getElementById('newCompPin').value.trim();
-        if (!key || !pin) return alert('ライセンスキーとPINコードを入力してください');
-
-        const sel = document.getElementById('newCompMyName');
-        sel.innerHTML = '<option value="" disabled selected>読込中...</option>';
-        btn.disabled = true;
-
-        const dynamicHeaders = makeHeaders(key);
-
-        try {
-            const res = await fetch(`${SUPABASE_URL}/licenses?license_key=eq.${encodeURIComponent(key)}&pin_code=eq.${encodeURIComponent(pin)}`, { headers: dynamicHeaders });
-            const licJson = await res.json();
-            
-            if (!licJson || !Array.isArray(licJson) || licJson.length === 0 || !licJson[0] || !licJson[0].is_active) {
-                throw new Error('キーまたはPINが間違っているか、無効なアカウントです。');
-            }
-
-            const customerId = licJson[0].stripe_customer_id;
-            let workers = [];
-
-            if (customerId) {
-                const workerRes = await fetch(`${SUPABASE_URL}/workers?stripe_customer_id=eq.${encodeURIComponent(customerId)}`, { headers: dynamicHeaders });
-                const workerJson = await workerRes.json();
-                if (Array.isArray(workerJson)) workers = workerJson;
-            }
-            
-            if (workers.length === 0) {
-                const workerResAlt = await fetch(`${SUPABASE_URL}/workers?license_key=eq.${encodeURIComponent(key)}`, { headers: dynamicHeaders });
-                const workerJsonAlt = await workerResAlt.json();
-                if (Array.isArray(workerJsonAlt)) workers = workerJsonAlt;
-            }
-
-            // 🔧 削除：条件なしの /workers 全件取得は、他社の子方のPINまで取得してしまうため撤去
-
-            if (!Array.isArray(workers) || workers.length === 0) {
-                throw new Error('名簿が0件です。親方画面でメンバーを登録しているか確認してください。');
-            }
-            
-            sel.innerHTML = '<option value="" disabled selected>名前を選択してください</option>';
-            workers.forEach(w => {
-                if (w && w.name) {
-                    sel.innerHTML += `<option value="${esc(w.name)}">${esc(w.name)}</option>`;
-                }
-            });
-
-            // 💡 ここで読み込んだ名簿データを変数にまるごと保存！
-            currentWorkerMaster = workers;
-
-            alert('名簿の読み込みに成功しました！名前を選んで追加に進んでください。');
-        } catch (err) {
-            alert('読み込み失敗: ' + err.message);
-            sel.innerHTML = '<option value="" disabled selected>読込失敗</option>';
-        } finally {
-            btn.disabled = false;
-        }
+    // 親方マスターの最新値（名前・日当・締め日など）を会社データに反映する
+    function applyMaster(comp, m) {
+        comp.myName = m.worker_name;
+        comp.wage = Number(m.wage) || 0;
+        comp.taxType = m.tax_type === '税別' ? '税別' : '税込';
+        comp.closingDate = Number(m.closing) || 31;
+        comp.payDate = m.pay_date || '未設定';
     }
 
-    function addCompany() {
+    async function addCompany(btn) {
         const name = document.getElementById('newCompName').value.trim();
-        const key = document.getElementById('newLicenseKey').value.trim();
-        const myName = document.getElementById('newCompMyName').value.trim();
-        const parentPin = document.getElementById('newCompPin').value.trim();
-        const myPin = document.getElementById('mySecretPin').value.trim(); // 💡 自分の4桁PINを取得
-        const wage = Number(document.getElementById('newCompWage').value) || 0;
-        const taxType = document.getElementById('newCompTax').value; 
-        const closingDate = Number(document.getElementById('newCompClosing').value);
-        const payDate = document.getElementById('newCompPay').value.trim() || '未設定';
-        
-        if (!name || !key || !myName || !parentPin) return alert('会社名、キー、名前、親方PIN(8桁)は必須です');
-        if (!myPin || myPin.length !== 4) return alert('自分の暗証番号（4桁）を正しく入力してください');
+        const token = document.getElementById('newInviteCode').value.replace(/\s/g, '');
+        const myPin = document.getElementById('mySecretPin').value.trim();
 
-        // 💡 Supabaseから読み込んだ名簿の中から、選んだ名前のデータを引っ張り出す
-        const targetWorker = currentWorkerMaster.find(w => w.name === myName);
-        
-        if (!targetWorker) {
-            return alert('❌ 名簿データが見つかりません。もう一度「① 情報を読み込む」を押してください。');
+        if (!name || !token) return alert('会社名と招待コードを入力してください');
+        if (!/^\d{4}$/.test(myPin)) return alert('自分の暗証番号（4桁の数字）を正しく入力してください');
+        if (companies.some(c => c.token === token)) return alert('この招待コードはすでに登録されています');
+
+        btn.disabled = true;
+        const originalText = btn.innerText;
+        btn.innerText = '確認中...';
+        try {
+            const rows = await rpc('child_login', { p_token: token, p_pin: myPin });
+            if (!Array.isArray(rows) || rows.length === 0) throw new Error('登録情報が見つかりません');
+
+            const comp = { name, token, pin: myPin };
+            applyMaster(comp, rows[0]);
+            companies.push(comp);
+            if (companies.length === 1) activeIndex = 0;
+            saveData();
+
+            document.getElementById('newCompName').value = '';
+            document.getElementById('newInviteCode').value = '';
+            document.getElementById('mySecretPin').value = '';
+
+            renderCompanies();
+            if (companies.length === 1) loadMasters();
+            alert(`✅ 登録しました！\n報告者: ${comp.myName}`);
+        } catch (err) {
+            alert('❌ 登録できませんでした。\n' + err.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerText = originalText;
         }
-        
-        // 💡 データベースに登録されているPINと、いま入力されたPINが合致するかチェック
-        if (String(targetWorker.pin) !== String(myPin)) {
-            return alert('❌ 暗証番号（4桁）が間違っています。\n正しい番号を入力しないと登録できません。');
-        }
-        
-        // 💡 全て合致したら晴れて登録！
-        companies.push({ name, url: key, myName, pin: myPin, wage, taxType, closingDate, payDate });
-        saveData();
-        
-        document.getElementById('newCompName').value = '';
-        document.getElementById('newLicenseKey').value = '';
-        document.getElementById('newCompMyName').innerHTML = '<option value="" disabled selected>先に情報を読み込んでください</option>';
-        document.getElementById('newCompPin').value = '';
-        document.getElementById('mySecretPin').value = ''; // 💡 PIN入力欄もクリア
-        document.getElementById('newCompWage').value = '';
-        document.getElementById('newCompPay').value = '';
-        
-        renderCompanies();
-        if(companies.length === 1) setActiveCompany(0);
     }
 
     function renderCompanies() {
@@ -311,9 +281,9 @@
         list.innerHTML = '';
         companies.forEach((comp, idx) => {
             const isActive = idx == activeIndex;
-            const wageText = comp.wage ? `¥${comp.wage.toLocaleString()} (${comp.taxType})` : '未設定';
-            const closeText = comp.closingDate == 31 ? '月末' : comp.closingDate + '日';
-            
+            const wageText = comp.wage ? `¥${Number(comp.wage).toLocaleString()} (${esc(comp.taxType)})` : '未設定';
+            const closeText = comp.closingDate == 31 ? '月末' : esc(comp.closingDate) + '日';
+
             list.innerHTML += `
                 <div class="company-item" style="${isActive ? 'border-color: #1a73e8; background: #e3f2fd;' : ''}">
                     <div style="font-weight:bold; font-size:18px;">${esc(comp.name)}</div>
@@ -329,7 +299,7 @@
                 </div>
             `;
         });
-        
+
         const current = companies[activeIndex];
         if (current) {
             document.getElementById('headerCompanyName').innerText = `🏢 送信先：${current.name}`;
@@ -349,9 +319,9 @@
     }
 
     function deleteCompany(idx) {
-        if(!confirm('本当に削除しますか？')) return;
+        if (!confirm('本当に削除しますか？')) return;
         companies.splice(idx, 1);
-        // 🔧 修正：削除で番号がズレて、別の会社に送信されてしまうのを防ぐ
+        // 削除で番号がズレて、別の会社に送信されてしまうのを防ぐ
         if (idx === activeIndex) {
             activeIndex = 0;
         } else if (idx < activeIndex) {
@@ -360,7 +330,7 @@
         if (activeIndex < 0 || activeIndex >= companies.length) activeIndex = 0;
         saveData();
         renderCompanies();
-        loadMasters(); // 💡 現場リストも切り替え後の会社のものに読み直す
+        loadMasters();
     }
 
     function saveData() {
@@ -368,84 +338,84 @@
         localStorage.setItem('oreno_active_index', activeIndex);
     }
 
+    // 現場一覧と、自分の最新マスター情報（名前・日当など）を読み込む
     async function loadMasters() {
+        const sel = document.getElementById('siteSelect');
         const comp = companies[activeIndex];
-        if (!comp) return;
-        try {
-            // 💡 認証：保存されている親方のライセンスキーをヘッダーに載せて現場（sites）を取得
-            const res = await fetch(`${SUPABASE_URL}/sites?license_key=eq.${encodeURIComponent(comp.url)}`, { headers: makeHeaders() });
-            const sites = await res.json();
-            currentSitesData = sites;
-
-            const sel = document.getElementById('siteSelect');
+        if (!comp) {
+            currentSitesData = [];
             sel.innerHTML = '<option value="" disabled selected>現場を選択してください</option>';
-            sites.forEach(s => {
-                sel.innerHTML += `<option value="${esc(s.name)}">${esc(s.name)}</option>`;
+            return;
+        }
+        try {
+            const [sites, me] = await Promise.all([
+                rpc('child_list_sites', { p_token: comp.token, p_pin: comp.pin }),
+                rpc('child_login', { p_token: comp.token, p_pin: comp.pin })
+            ]);
+            if (Array.isArray(me) && me.length > 0) {
+                applyMaster(comp, me[0]);
+                saveData();
+                renderCompanies();
+            }
+            currentSitesData = Array.isArray(sites) ? sites : [];
+            sel.innerHTML = '<option value="" disabled selected>現場を選択してください</option>';
+            currentSitesData.forEach(s => {
+                sel.innerHTML += `<option value="${esc(s.site_name)}">${esc(s.site_name)}</option>`;
             });
         } catch (err) {
             console.log('現場マスター読込失敗', err);
+            alert('⚠️ 現場の読み込みに失敗しました。\n' + err.message + '\n\n暗証番号や招待コードが変わった場合は、設定タブで登録し直してください。');
         }
     }
 
     function syncClientCompany() {
         const siteName = document.getElementById('siteSelect').value;
-        const companyInput = document.getElementById('clientCompany');
-        const siteInfo = currentSitesData.find(s => s.name === siteName);
-        companyInput.value = (siteInfo && siteInfo.company) ? siteInfo.company : '';
+        const siteInfo = currentSitesData.find(s => s.site_name === siteName);
+        document.getElementById('clientCompany').value = (siteInfo && siteInfo.client_company) ? siteInfo.client_company : '';
     }
 
-    // 💡 追加：既存データをSupabaseから読み込んで画面に自動表示する関数
-    // 💡 追加：既存データをSupabaseから読み込んで画面に自動表示する関数
+    function resetReportFields() {
+        document.getElementById('headcount').value = 1;
+        document.getElementById('others').value = '';
+        document.getElementById('expGas').value = '';
+        document.getElementById('expHigh').value = '';
+        document.getElementById('expPark').value = '';
+        document.getElementById('expMisc').value = '';
+        document.getElementById('halfDayCheck').checked = false;
+    }
+
+    // 既に登録済みのデータがあれば画面に自動表示する
     async function loadExistingAttendanceForChild() {
-        // 現在アクティブな送信先設定（名前）を確実に取得する
-        if (!companies || companies.length === 0 || activeIndex === undefined) return;
         const comp = companies[activeIndex];
-        if (!comp || !comp.myName) return;
+        if (!comp) return;
 
         const workDateVal = document.getElementById('workDate').value;
         const siteNameVal = document.getElementById('siteSelect').value;
-        const workerNameVal = comp.myName; // 💡 これで確実に「ログイン中の子方の名前」が引っかかります
-
-        // 条件が揃っていないときは何もしない
-        if (!workDateVal || !siteNameVal || !workerNameVal) return;
+        if (!workDateVal || !siteNameVal) return;
 
         try {
-            const searchUrl = `${SUPABASE_URL}/attendance?work_date=eq.${encodeURIComponent(workDateVal)}&worker_name=eq.${encodeURIComponent(workerNameVal)}&site_name=eq.${encodeURIComponent(siteNameVal)}`;
-            const res = await fetch(searchUrl, { headers: makeHeaders() });
-            if (!res.ok) return;
-
-            const foundRecords = await res.json();
-            const existingRecords = Array.isArray(foundRecords)
-                ? foundRecords.filter(x => !x.license_key || x.license_key === comp.url)
-                : [];
-
-            if (existingRecords && existingRecords.length > 0) {
-                // 🎉 データが見つかったら画面に自動セット
-                const record = existingRecords[0];
-                
-                // 💡 headcount が 0（経費のみの登録など）の場合もあるため、そのまま値を引き継ぐ
-                document.getElementById('headcount').value = record.headcount !== undefined ? record.headcount : 1;
-                document.getElementById('clientCompany').value = record.client_company || "";
-                document.getElementById('others').value = record.others || "";
+            const rows = await rpc('child_get_attendance', {
+                p_token: comp.token, p_pin: comp.pin,
+                p_work_date: workDateVal, p_site_name: siteNameVal
+            });
+            if (Array.isArray(rows) && rows.length > 0) {
+                const record = rows[0];
+                // headcount が 0（経費のみの登録など）の場合もあるため、そのまま値を引き継ぐ
+                document.getElementById('headcount').value = (record.headcount === null || record.headcount === undefined) ? 1 : record.headcount;
+                document.getElementById('clientCompany').value = record.client_company || '';
+                document.getElementById('others').value = record.others || '';
                 document.getElementById('expGas').value = record.gasoline || 0;
                 document.getElementById('expHigh').value = record.highway || 0;
                 document.getElementById('expPark').value = record.parking || 0;
                 document.getElementById('expMisc').value = record.misc || 0;
-                
                 // 上書き時に重複して半分になるのを防ぐため、半日チェックは外す
                 document.getElementById('halfDayCheck').checked = false;
             } else {
-                // 📝 新規の場合は初期状態（1人、その他経費は空）に戻す
-                document.getElementById('headcount').value = 1;
-                document.getElementById('others').value = "";
-                document.getElementById('expGas').value = "";
-                document.getElementById('expHigh').value = "";
-                document.getElementById('expPark').value = "";
-                document.getElementById('expMisc').value = "";
-                document.getElementById('halfDayCheck').checked = false;
+                resetReportFields();
+                syncClientCompany();
             }
         } catch (err) {
-            console.error("既存データの自動取得に失敗しました:", err);
+            console.error('既存データの自動取得に失敗しました:', err);
         }
     }
 
@@ -455,203 +425,151 @@
         if (!comp) return alert('設定タブで会社を登録してください');
         if (companies.length >= 2 && !confirm(`送信先は【 ${comp.name} 】\n報告者は【 ${comp.myName} 】で間違いありませんか？`)) return;
 
+        const workDateVal = document.getElementById('workDate').value;
+        const siteNameVal = document.getElementById('siteSelect').value;
+        if (!workDateVal || !siteNameVal) return alert('作業日と現場を選んでください');
+
+        // 人数：空欄なら1、0（経費のみ）はそのまま0で登録する
+        let finalHeadcount = readNumber('headcount', 1);
+        if (finalHeadcount === null || finalHeadcount < 0) return alert('人数を正しく入力してください');
+
+        const expenseIds = ['expGas', 'expHigh', 'expPark', 'expMisc'];
+        const expenses = expenseIds.map(id => readNumber(id, 0));
+        if (expenses.some(v => v === null || v < 0)) return alert('経費は0以上の数字で入力してください');
+
+        const isHalfDay = document.getElementById('halfDayCheck').checked;
+        if (isHalfDay) {
+            const calculatedHalf = finalHeadcount * 0.5;
+            if (!confirm(`⚠️ 半日チェックが入っています。\n\n人工を半分にして【 ${calculatedHalf} 人工 】で登録しますがよろしいですか？`)) return;
+            finalHeadcount = calculatedHalf;
+        }
+
         const btn = document.getElementById('submitBtn');
-        btn.disabled = true; 
+        btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 送信中...';
 
-        // 🔧 整理：ここにあった未使用の payload 定義（半日計算前の古いもの）は撤去
-
         try {
-            // 💡 子モバイル版の正しい入力値と変数名を取得
-            const workDateVal = document.getElementById('workDate').value;
-            const siteNameVal = document.getElementById('siteSelect').value;
-            const workerNameVal = comp.myName;
+            const result = await rpc('child_submit_attendance', {
+                p_token: comp.token,
+                p_pin: comp.pin,
+                p_work_date: workDateVal,
+                p_site_name: siteNameVal,
+                p_headcount: finalHeadcount,
+                p_others: document.getElementById('others').value || '',
+                p_gasoline: Math.round(expenses[0]),
+                p_highway: Math.round(expenses[1]),
+                p_parking: Math.round(expenses[2]),
+                p_misc: Math.round(expenses[3])
+            });
 
-            // 💡 人数の基本値を取得
-            let finalHeadcount = Number(document.getElementById('headcount').value) || 1;
+            alert(result === 'updated' ? '正常に記録（上書き）しました！' : '正常に記録しました！');
 
-            // 💡 半日チェックが入っているか確認
-            const isHalfDay = document.getElementById('halfDayCheck').checked;
-            if (isHalfDay) {
-                // 人数を半分（0.5倍）にする計算
-                const calculatedHalf = finalHeadcount * 0.5;
-                // 間違い防止の確認ウィンドウを出す
-                if (!confirm(`⚠️ 半日チェックが入っています。\n\n人工を半分にして【 ${calculatedHalf} 人工 】で登録しますがよろしいですか？`)) {
-                    btn.disabled = false; 
-                    btn.innerText = '出面と経費を送信';
-                    return; // キャンセルしたら処理を中断
-                }
-                finalHeadcount = calculatedHalf;
-            }
-
-            const payload = {
-                license_key: comp.url,
-                work_date: workDateVal,
-                site_name: siteNameVal,
-                client_company: document.getElementById('clientCompany').value || "", 
-                headcount: finalHeadcount, // 💡 計算後の人工数をセット
-                worker_name: workerNameVal,
-                others: document.getElementById('others').value || "",
-                gasoline: Number(document.getElementById('expGas').value) || 0,
-                highway: Number(document.getElementById('expHigh').value) || 0,
-                parking: Number(document.getElementById('expPark').value) || 0,
-                misc: Number(document.getElementById('expMisc').value) || 0
-            };
-
-            // 1. データベースに「同じ日付・名前・現場」の既存データがないか確認する
-            const searchUrl = `${SUPABASE_URL}/attendance?work_date=eq.${encodeURIComponent(workDateVal)}&worker_name=eq.${encodeURIComponent(workerNameVal)}&site_name=eq.${encodeURIComponent(siteNameVal)}`;
-            const checkRes = await fetch(searchUrl, { headers: makeHeaders() });
-            const foundRecords = await checkRes.json();
-
-            // 🔧 修正：他社の同名・同現場のデータを掴んで上書きしないよう、自分の送信先のデータだけに絞る
-            const existingRecords = Array.isArray(foundRecords)
-                ? foundRecords.filter(x => !x.license_key || x.license_key === comp.url)
-                : [];
-
-            let res;
-            if (existingRecords && existingRecords.length > 0) {
-                // 2. 【既存データがある場合】➔ 上書き（PATCH）する
-                const targetId = existingRecords[0].id;
-                res = await fetch(`${SUPABASE_URL}/attendance?id=eq.${targetId}`, {
-                    method: 'PATCH',
-                    headers: makeHeaders(),
-                    body: JSON.stringify(payload)
-                });
-            } else {
-                // 3. 【既存データがない場合】➔ 新規作成（POST）する
-                res = await fetch(`${SUPABASE_URL}/attendance`, {
-                    method: 'POST',
-                    headers: makeHeaders(),
-                    body: JSON.stringify(payload)
-                });
-            }
-
-            if (!res.ok) {
-                const errLog = await res.text();
-                console.error("Supabaseエラー詳細（生データ）:", errLog);
-                alert("データベース登録拒否:\n" + errLog);
-                throw new Error();
-            }
-
-            alert('正常に記録（上書き）しました！');
-            
-            document.getElementById('halfDayCheck').checked = false; // 🔧 次の入力で意図せず半日になるのを防ぐ
             document.getElementById('siteSelect').value = '';
-            document.getElementById('clientCompany').value = ''; 
-            document.getElementById('headcount').value = '1';
-            document.getElementById('others').value = '';
-            document.getElementById('expGas').value = '';
-            document.getElementById('expHigh').value = '';
-            document.getElementById('expPark').value = '';
-            document.getElementById('expMisc').value = '';
+            document.getElementById('clientCompany').value = '';
+            resetReportFields();
         } catch (err) {
-            alert('エラーが発生しました。');
+            alert('❌ 送信できませんでした。\n' + err.message);
         } finally {
-            btn.disabled = false; 
-            btn.innerText = '出面と経費を送信'; 
+            btn.disabled = false;
+            btn.innerText = '出面と経費を送信';
         }
     }
 
-    // 🔧 削除：submitExpense() は存在しないボタン(expenseBtn)を参照する死にコードだったため撤去
-
-    async function fetchCalendar(btn) { 
+    async function fetchCalendar(btn) {
         if (companies.length === 0) return alert('会社が登録されていません');
         const selectedMonthPrefix = document.getElementById('calMonthSelect').value;
-        let [targetYear, targetMonth] = selectedMonthPrefix.split('-').map(Number);
+        const [targetYear, targetMonth] = selectedMonthPrefix.split('-').map(Number);
         let detailsHtml = '';
 
         document.getElementById('calResult').style.display = 'block';
         document.getElementById('calDetails').innerHTML = `<div style="text-align:center;"><i class="fas fa-spinner fa-spin"></i> データを収集中...</div>`;
 
-        let originalText = btn.innerHTML;
+        const originalText = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 集計中...';
 
+        // 取得範囲：前月1日〜選択月の末日（締め日がずれても必ず含まれる）
+        const fetchFrom = fmtDate(new Date(targetYear, targetMonth - 2, 1));
+        const fetchTo = fmtDate(new Date(targetYear, targetMonth, 0));
+
         try {
-            for (let comp of companies) {
+            for (const comp of companies) {
                 try {
-                    // 💡 集計時も親方のライセンスキーヘッダーを付与してデータをぶっこ抜く
-                    // 🔧 修正：会社ごとのライセンスキーをヘッダーに載せる（以前はアクティブな会社のキーを使い回して0件になっていた）
-                    const attRes = await fetch(`${SUPABASE_URL}/attendance?worker_name=eq.${encodeURIComponent(comp.myName)}&license_key=eq.${encodeURIComponent(comp.url)}`, { headers: makeHeaders(comp.url) });
-                    const attRecords = await attRes.json();
-                    
-                    let wage = comp.wage || 0;
-                    let closing = comp.closingDate || 31;
-                    let taxType = comp.taxType || '税込';
-                    
+                    // 親方マスターの最新の日当・締め日・税区分を使う（親方画面と同じ計算にする）
+                    const [me, attRecords] = await Promise.all([
+                        rpc('child_login', { p_token: comp.token, p_pin: comp.pin }),
+                        rpc('child_list_attendance', { p_token: comp.token, p_pin: comp.pin, p_from: fetchFrom, p_to: fetchTo })
+                    ]);
+                    if (Array.isArray(me) && me.length > 0) applyMaster(comp, me[0]);
+
+                    const masterWage = Number(comp.wage) || 0;
+                    const closing = Number(comp.closingDate) || 31;
+                    const isTaxExc = comp.taxType === '税別';
+
                     let startPeriod, endPeriod, displayPeriodText;
                     if (closing !== 31) {
                         startPeriod = new Date(targetYear, targetMonth - 2, closing + 1);
                         endPeriod = new Date(targetYear, targetMonth - 1, closing);
-                        displayPeriodText = `${startPeriod.getMonth()+1}/${startPeriod.getDate()} 〜 ${endPeriod.getMonth()+1}/${endPeriod.getDate()}`;
+                        displayPeriodText = `${startPeriod.getMonth() + 1}/${startPeriod.getDate()} 〜 ${endPeriod.getMonth() + 1}/${endPeriod.getDate()}`;
                     }
+                    const startStr = startPeriod ? fmtDate(startPeriod) : null;
+                    const endStr = endPeriod ? fmtDate(endPeriod) : null;
 
-                    let standardRecords = [];
-                    let closingRecords = [];
-                    let standardExpenses = 0;
-                    let closingExpenses = 0;
+                    // 1行ごとに親方画面と同じ計算をする（単価：出面の単価→マスター単価→既定値、税は行ごとに切り捨て）
+                    const emptySum = () => ({ days: 0, wageTotal: 0, tax: 0, expenses: 0 });
+                    const std = emptySum(), cls = emptySum();
+                    const addRow = (sum, r) => {
+                        const hc = (r.headcount === null || r.headcount === undefined) ? 1 : Number(r.headcount);
+                        const unit = Number(r.wage) ? Number(r.wage) : (masterWage || DEFAULT_WAGE);
+                        const base = unit * hc;
+                        const tax = isTaxExc ? Math.floor(base * 0.1) : 0;
+                        const exp = (Number(r.gasoline) || 0) + (Number(r.highway) || 0) + (Number(r.parking) || 0) + (Number(r.misc) || 0);
+                        sum.days += hc;
+                        sum.wageTotal += base + tax;
+                        sum.tax += tax;
+                        sum.expenses += exp;
+                    };
 
-                    attRecords.forEach(r => {
-                        r.date = r.work_date;
-                        r.site = r.site_name;
-                        let totalExp = (Number(r.gasoline)||0) + (Number(r.highway)||0) + (Number(r.parking)||0) + (Number(r.misc)||0);
-                        r.totalExpense = totalExp;
-
-                        if (r.date.startsWith(selectedMonthPrefix)) {
-                            standardRecords.push(r);
-                            standardExpenses += totalExp;
-                        }
+                    (Array.isArray(attRecords) ? attRecords : []).forEach(r => {
+                        const d = r.work_date || '';
+                        if (d.startsWith(selectedMonthPrefix)) addRow(std, r);
                         if (closing === 31) {
-                            if (r.date.startsWith(selectedMonthPrefix)) {
-                                closingRecords.push(r);
-                                closingExpenses += totalExp;
-                            }
-                        } else {
-                            let [ry, rm, rd] = r.date.split('-').map(Number);
-                            let recDate = new Date(ry, rm - 1, rd);
-                            if (recDate >= startPeriod && recDate <= endPeriod) {
-                                closingRecords.push(r);
-                                closingExpenses += totalExp;
-                            }
+                            if (d.startsWith(selectedMonthPrefix)) addRow(cls, r);
+                        } else if (d >= startStr && d <= endStr) {
+                            addRow(cls, r);
                         }
                     });
 
-                    let standardDays = standardRecords.reduce((sum, r) => sum + (r.headcount || 0), 0);
-                    let closingDays = closingRecords.reduce((sum, r) => sum + (r.headcount || 0), 0);
-                    
-                    const calcTotal = (days, expenses) => {
-                        let base = days * wage;
-                        let tax = taxType === '税別' ? Math.floor(base * 0.1) : 0;
-                        return { base, tax, total: base + tax + expenses };
-                    };
-                    let stdCalc = calcTotal(standardDays, standardExpenses);
-                    let clsCalc = calcTotal(closingDays, closingExpenses);
-                    
+                    const unitText = `@${(masterWage || DEFAULT_WAGE).toLocaleString()}`;
+                    const block = (sum) => `
+                                合計人工: <b>${sum.days}</b> 人<br>
+                                予想給与: <span class="wage-highlight" style="COLOR_PLACEHOLDER">¥${(sum.wageTotal + sum.expenses).toLocaleString()}</span>
+                                <div style="font-size:11px; color:#718096; margin-top:2px;">
+                                    (${unitText} ${isTaxExc ? `/ 消費税: ¥${sum.tax.toLocaleString()}` : ''} ${sum.expenses > 0 ? `<br><span style="color:#059669;">💰 経費合計: ¥${sum.expenses.toLocaleString()}</span>` : ''})
+                                </div>`;
+
                     detailsHtml += `
                         <div style="background:#fff; border:1px solid #ccc; border-radius:8px; padding:15px; margin-bottom:20px;">
                             <h3 style="margin-top:0; color:#1a365d;">🏢 ${esc(comp.name)}</h3>
                             <div class="cal-summary" style="background:#f5f5f5; border-color:#ddd;">
                                 <span class="period-label" style="background:#757575;">月単位 (1日〜月末)</span><br>
-                                合計人工: <b>${standardDays}</b> 人<br>
-                                予想給与: <span class="wage-highlight" style="color:#555;">¥${stdCalc.total.toLocaleString()}</span>
-                                <div style="font-size:11px; color:#718096; margin-top:2px;">
-                                    (@${wage.toLocaleString()} ${taxType === '税別' ? `/ 消費税: ¥${stdCalc.tax.toLocaleString()}` : ''} ${standardExpenses > 0 ? `<br><span style="color:#059669;">💰 経費合計: ¥${standardExpenses.toLocaleString()}</span>` : ''})
-                                </div>
+                                ${block(std).replace('COLOR_PLACEHOLDER', 'color:#555;')}
                             </div>
                             <div class="cal-summary">
-                                <span class="period-label">実際の給与対象 (${closing==31 ? '月末' : closing+'日'}締め)</span><br>
+                                <span class="period-label">実際の給与対象 (${closing == 31 ? '月末' : closing + '日'}締め)</span><br>
                                 ${closing !== 31 ? `<span style="font-size:12px; color:#555;">期間: ${displayPeriodText}</span><br>` : ''}
-                                合計人工: <b>${closingDays}</b> 人<br>
-                                予想給与: <span class="wage-highlight">¥${clsCalc.total.toLocaleString()}</span><br>
-                                <div style="font-size:11px; color:#718096; margin-top:2px;">
-                                    (@${wage.toLocaleString()} ${taxType === '税別' ? `/ 消費税: ¥${clsCalc.tax.toLocaleString()}` : ''} ${closingExpenses > 0 ? `<br><span style="color:#059669;">💰 経費合計: ¥${closingExpenses.toLocaleString()}</span>` : ''})
-                                </div>
+                                ${block(cls).replace('COLOR_PLACEHOLDER', '')}
                                 <div style="font-size:12px; color:#1a73e8; margin-top:8px;">💳 支払日: ${esc(comp.payDate)}</div>
                             </div>
                         </div>
                     `;
-                } catch(e) { console.log(comp.name + 'の取得失敗'); }
+                } catch (e) {
+                    console.log(comp.name + 'の取得失敗', e);
+                    detailsHtml += `<div style="background:#fff5f5; border:1px solid #fc8181; border-radius:8px; padding:12px; margin-bottom:20px; color:#c53030; font-size:13px;">🏢 ${esc(comp.name)}：取得に失敗しました（${esc(e.message)}）</div>`;
+                }
             }
+            saveData();
+            renderCompanies();
             document.getElementById('calDetails').innerHTML = detailsHtml || `<p style="text-align:center;">⚠️ データがありません</p>`;
         } finally {
             btn.disabled = false;
