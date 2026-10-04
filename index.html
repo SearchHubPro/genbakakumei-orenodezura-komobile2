@@ -37,20 +37,20 @@
         .wcal-wd { text-align: center; font-size: 11px; font-weight: bold; color: #666; padding: 2px 0; }
         .wcal-wd.sun, .wcal-day.sun .wcal-num { color: #d32f2f; }
         .wcal-wd.sat, .wcal-day.sat .wcal-num { color: #1565c0; }
-        .wcal-day { position: relative; aspect-ratio: 1 / 1.05; max-width: 100%; border: 1px solid #e5e7eb; border-radius: 6px; background: #fafafa;
+        .wcal-day { box-sizing: border-box; position: relative; aspect-ratio: 1 / 1.05; min-height: 46px; max-width: 100%; border: 1px solid #e5e7eb; border-radius: 6px; background: #fafafa;
             padding: 3px 0 0; font-size: 12px; display: flex; flex-direction: column; align-items: center; gap: 1px; cursor: default; width: 100%; margin: 0; color: #333; font-weight: normal; }
         .wcal-day.empty { border: 0; background: transparent; }
         .wcal-day.in-period { border: 2px solid #f59e0b; }
         .wcal-day.has { cursor: pointer; }
         .wcal-num { font-weight: bold; line-height: 1.2; }
-        .wcal-mark { width: 22px; height: 22px; border-radius: 50%; font-size: 10px; line-height: 22px; font-weight: bold; text-align: center; }
+        .wcal-mark { display: block; flex: none; box-sizing: border-box; width: 22px; height: 22px; min-width: 22px; max-width: 22px; min-height: 22px; max-height: 22px; border-radius: 50%; font-size: 10px; line-height: 22px; font-weight: bold; text-align: center; }
         .wcal-mark.full { background: #1a73e8; color: #fff; }
         .wcal-mark.half { background: linear-gradient(90deg, #1a73e8 50%, #d6e4fb 50%); color: #fff; text-shadow: 0 0 2px #1a73e8; }
         .wcal-mark.zero { background: #fff; color: #059669; border: 1px solid #059669; line-height: 20px; }
         .wcal-day.selected { outline: 3px solid #d32f2f; outline-offset: -1px; }
         .wcal-legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11px; color: #555; margin-top: 8px; align-items: center; }
         .wcal-legend span { display: inline-flex; align-items: center; gap: 4px; }
-        .wcal-legend .wcal-mark { width: 16px; height: 16px; line-height: 16px; font-size: 9px; }
+        .wcal-legend .wcal-mark { width: 16px; height: 16px; min-width: 16px; max-width: 16px; min-height: 16px; max-height: 16px; line-height: 16px; font-size: 9px; }
         .wcal-legend .box { width: 14px; height: 14px; border: 2px solid #f59e0b; border-radius: 3px; display: inline-block; }
         .wcal-note { font-size: 12px; color: #92400e; background: #fff7ed; border-radius: 6px; padding: 6px 8px; margin-top: 8px; }
         .wcal-detail { margin-top: 8px; font-size: 13px; background: #f5f9ff; border: 1px solid #cfe0fb; border-radius: 6px; padding: 8px 10px; line-height: 1.6; }
@@ -535,7 +535,7 @@
             }
             const cls = ['wcal-day', wd === 0 ? 'sun' : wd === 6 ? 'sat' : '', inPeriod ? 'in-period' : '', recs.length ? 'has' : ''].join(' ');
             cells += recs.length
-                ? `<button type="button" class="${cls}" data-ci="${ci}" data-date="${ds}" aria-label="${month}月${day}日の出面を見る"><span class="wcal-num">${day}</span>${mark}</button>`
+                ? `<div class="${cls}" role="button" tabindex="0" data-ci="${ci}" data-date="${ds}" aria-label="${month}月${day}日の出面を見る"><span class="wcal-num">${day}</span>${mark}</div>`
                 : `<div class="${cls}"><span class="wcal-num">${day}</span></div>`;
         }
 
@@ -686,6 +686,40 @@
             btn.innerHTML = originalText;
         }
     }
+
+    // ⌨️ カレンダーの日付はキーボード（Enter/スペース）でも選べるようにする
+    document.addEventListener('keydown', (e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('wcal-day') && e.target.classList.contains('has')) {
+            e.preventDefault(); e.target.click();
+        }
+    });
+
+    // 📱 iPhone（ホーム画面から開いたとき）対策：別のアプリから戻ると、下のタブや上のヘッダーが
+    //    画面の途中に来てしまうことがある。離れるときに入力中の欄を閉じ、戻ったときに位置を計算し直す。
+    (function () {
+        const bars = () => document.querySelectorAll('.tab-bar, .bottom-nav, .header');
+        function relayout() {
+            bars().forEach(el => { el.style.transform = 'translateZ(0)'; });
+            void document.body.offsetHeight;
+            requestAnimationFrame(() => {
+                bars().forEach(el => { el.style.transform = ''; });
+                window.scrollTo(window.scrollX, window.scrollY);
+            });
+        }
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                // キーボードが出たまま離れると、戻ったときに画面の高さがずれるので先に閉じる
+                const a = document.activeElement;
+                if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) a.blur();
+            } else {
+                relayout(); setTimeout(relayout, 300); setTimeout(relayout, 1000);
+            }
+        });
+        window.addEventListener('pageshow', relayout);
+        window.addEventListener('focus', relayout);
+        window.addEventListener('orientationchange', () => setTimeout(relayout, 300));
+        if (window.visualViewport) window.visualViewport.addEventListener('resize', relayout);
+    })();
 </script>
 </body>
 </html>
